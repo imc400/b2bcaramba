@@ -7,6 +7,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { auditLog, campaigns, companies, type CatalogFilter } from "@/db/schema";
 import { requireAdmin } from "@/lib/auth/admin";
+import { endOfDayInChile } from "@/lib/campaign";
 import {
   getCampaignCatalog,
   searchProductsForCuration,
@@ -106,7 +107,7 @@ export async function upsertCompanyAction(
     bannerTitle: d.bannerTitle,
     bannerSubtitle: d.bannerSubtitle || null,
     theme: { accentColor: d.accentColor },
-    endsAt: d.endsAt ? new Date(`${d.endsAt}T23:59:59-03:00`) : null,
+    endsAt: d.endsAt ? endOfDayInChile(d.endsAt) : null,
     catalogFilter,
     defaultQuota: d.defaultQuota,
     safetyStock: d.safetyStock,

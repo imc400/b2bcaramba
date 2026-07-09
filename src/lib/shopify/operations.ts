@@ -44,7 +44,19 @@ export const PRODUCT_SYNC_QUERY = /* GraphQL */ `
           availableForSale
           updatedAt
           image { url }
-          inventoryItem { id }
+          inventoryItem {
+            id
+            # Sin esto la reconciliación horaria nunca repararía el stock:
+            # un webhook de inventario perdido dejaba el espejo desviado
+            # hasta el full-sync semanal.
+            inventoryLevels(first: 10) {
+              nodes {
+                location { id }
+                quantities(names: ["available"]) { name quantity }
+                updatedAt
+              }
+            }
+          }
         }
       }
     }

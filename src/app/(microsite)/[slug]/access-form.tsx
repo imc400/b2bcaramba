@@ -89,14 +89,6 @@ function AccessSteps({
               onChange={(e) => setIdentifier(e.target.value)}
             />
           </Field>
-          {identifyState.status === "rate_limited" ? (
-            <p
-              role="alert"
-              className="rounded-xl bg-caramba-amarillo-soft px-4 py-2.5 text-sm text-caramba-amarillo-texto"
-            >
-              Pediste varios códigos seguidos. Espera unos minutos e inténtalo de nuevo.
-            </p>
-          ) : null}
           <Button type="submit" className="w-full" disabled={identifying}>
             {identifying ? (
               <>
@@ -118,9 +110,8 @@ function AccessSteps({
           <div>
             <h2 className="font-display text-xl text-caramba-grafito">Revisa tu correo</h2>
             <p className="mt-1 text-sm text-caramba-grafito/70">
-              {identifyState.maskedEmail
-                ? `Enviamos un código a ${identifyState.maskedEmail}.`
-                : "Si tus datos están registrados, recibirás un código en tu correo."}
+              Si tus datos están registrados, recibirás un código de 6 dígitos en tu correo
+              corporativo.
             </p>
           </div>
           <Field label="Código de 6 dígitos" htmlFor="code">

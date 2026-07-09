@@ -8,10 +8,12 @@ import { campaigns, collaborators, companies } from "@/db/schema";
 import { createOtp, verifyOtp } from "@/lib/auth/otp";
 import { normalizeRut } from "@/lib/auth/rut";
 import { createSession, getMicrositeSession } from "@/lib/auth/session";
+import { isCampaignOpen } from "@/lib/campaign";
 import { getRemainingQuota, createOrder } from "@/lib/orders";
 import { otpEmailHtml, sendEmail } from "@/lib/email/send";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
-/** Campaña activa de un slug (empresa). */
+/** Campaña ABIERTA de un slug (empresa): status + ventana de fechas. */
 async function activeCampaignBySlug(slug: string) {
   const [row] = await db
     .select({ company: companies, campaign: campaigns })
@@ -22,7 +24,8 @@ async function activeCampaignBySlug(slug: string) {
     )
     .orderBy(campaigns.createdAt)
     .limit(1);
-  return row ?? null;
+  if (!row || !isCampaignOpen(row.campaign)) return null;
+  return row;
 }
 
 // ---------------------------------------------------------------------------
@@ -35,7 +38,9 @@ const identifySchema = z.object({
   identifier: z.string().min(3).max(120),
 });
 
-export type IdentifyState = { status: "idle" | "sent" | "rate_limited"; maskedEmail?: string };
+// Sin maskedEmail a propósito: la respuesta no debe variar según exista o no
+// el colaborador (ver identifyAction).
+export type IdentifyState = { status: "idle" | "sent" };
 
 export async function identifyAction(
   _prev: IdentifyState,
@@ -47,6 +52,13 @@ export async function identifyAction(
   });
   // Respuesta genérica incluso ante input inválido
   if (!parsed.success) return { status: "sent" };
+
+  // Tope por IP: el límite por colaborador (3/hora) no frena un barrido de
+  // RUTs, porque cada intento usa un colaborador distinto. Siempre respondemos
+  // "sent" para no revelar que se activó el límite.
+  const ip = await getClientIp();
+  const { allowed } = await checkRateLimit(`otp_request:${ip}`, 20, 60 * 60);
+  if (!allowed) return { status: "sent" };
 
   const ctx = await activeCampaignBySlug(parsed.data.slug);
   if (!ctx) return { status: "sent" };
@@ -67,25 +79,21 @@ export async function identifyAction(
 
   if (collab?.email) {
     const otp = await createOtp(collab.id);
-    if (otp.ok === false) return { status: "rate_limited" };
-    await sendEmail({
-      to: [collab.email],
-      subject: `${otp.code} es tu código · Regalos ${ctx.company.name}`,
-      html: otpEmailHtml(otp.code, ctx.company.name),
-    });
+    // OJO: incluso el rate limit se responde como "sent". Distinguirlo
+    // revelaría que el identificador existe (enumeración por RUT).
+    if (otp.ok) {
+      await sendEmail({
+        to: [collab.email],
+        subject: `${otp.code} es tu código · Regalos ${ctx.company.name}`,
+        html: otpEmailHtml(otp.code, ctx.company.name),
+      });
+    }
   }
-  // Mismo mensaje exista o no; enmascaramos solo si existe (no revela nada
-  // nuevo a quien ya conoce el correo que ingresó)
-  return {
-    status: "sent",
-    maskedEmail: collab?.email ? maskEmail(collab.email) : undefined,
-  };
-}
 
-function maskEmail(email: string): string {
-  const [user, domain] = email.split("@");
-  const visible = user.slice(0, 2);
-  return `${visible}${"•".repeat(Math.max(2, user.length - 2))}@${domain}`;
+  // Respuesta IDÉNTICA exista o no el colaborador: nunca devolvemos el correo
+  // (ni enmascarado), porque con un RUT — dato semi-público en Chile — se
+  // podría descubrir el dominio y la forma del correo corporativo.
+  return { status: "sent" };
 }
 
 // ---------------------------------------------------------------------------
@@ -200,6 +208,9 @@ export async function submitOrderAction(
       sin_stock: "Uno de los productos se agotó justo ahora. Quítalo y elige otro.",
       campana_cerrada: "Esta campaña ya cerró.",
       seleccion_vacia: "No has elegido ningún regalo.",
+      seleccion_invalida: "Elegiste el mismo regalo dos veces. Quita el repetido.",
+      fuera_de_catalogo:
+        "Uno de los regalos ya no está disponible en esta campaña. Vuelve al catálogo y elige otro.",
     };
     return { status: "error", message: messages[result.error] };
   }

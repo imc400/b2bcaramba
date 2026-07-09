@@ -15,6 +15,13 @@
       "when": 1783635224259,
       "tag": "0001_add_unlisted_status",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783639158502,
+      "tag": "0002_rate_limits_and_order_index",
+      "breakpoints": true
     }
   ]
 }

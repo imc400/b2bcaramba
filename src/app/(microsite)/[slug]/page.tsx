@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { campaigns, companies } from "@/db/schema";
 import { getMicrositeSession } from "@/lib/auth/session";
+import { isCampaignOpen } from "@/lib/campaign";
 import { AccessForm } from "./access-form";
 import { accentText, BannerDecoration, ToyIcon } from "@/components/brand";
 
@@ -23,8 +24,10 @@ export default async function AccessPage({
     .where(and(eq(companies.slug, slug), eq(campaigns.status, "active")))
     .limit(1);
 
-  // El layout garantiza que la empresa existe; sin campaña activa → cerrada
-  if (!ctx) {
+  // El layout garantiza que la empresa existe. Sin campaña abierta (status o
+  // fecha límite vencida) mostramos el cierre acá, y no cuando el colaborador
+  // ya armó su carrito.
+  if (!ctx || !isCampaignOpen(ctx.campaign)) {
     const [company] = await db.select().from(companies).where(eq(companies.slug, slug));
     return <CampaignClosed companyName={company?.name ?? "tu empresa"} />;
   }

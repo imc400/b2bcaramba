@@ -276,6 +276,8 @@ export const orders = pgTable(
     index("orders_campaign_idx").on(t.campaignId),
     index("orders_status_idx").on(t.status),
     index("orders_created_idx").on(t.createdAt),
+    // Camino caliente: el chequeo de cupo de cada pedido filtra por colaborador
+    index("orders_collaborator_idx").on(t.collaboratorId),
   ],
 );
 
@@ -333,6 +335,21 @@ export const webhookEvents = pgTable(
     processedAt: timestamp("processed_at", { withTimezone: true }),
   },
   (t) => [index("webhook_events_received_idx").on(t.receivedAt)],
+);
+
+/**
+ * Rate limiting persistente (ventana fija). En serverless no sirve un contador
+ * en memoria: cada invocación puede caer en una instancia distinta.
+ * key = "<scope>:<identificador>", p.ej. "admin_login:ip:1.2.3.4"
+ */
+export const rateLimits = pgTable(
+  "rate_limits",
+  {
+    key: text("key").primaryKey(),
+    count: integer("count").notNull().default(0),
+    windowStart: timestamp("window_start", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("rate_limits_window_idx").on(t.windowStart)],
 );
 
 // Checkpoints del pipeline (última reconciliación, último bulk, etc.)

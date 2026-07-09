@@ -5,7 +5,7 @@ import { syncState } from "@/db/schema";
 import { inngest } from "@/inngest/client";
 import { shopifyAdmin } from "@/lib/shopify/client";
 import { RECONCILIATION_QUERY } from "@/lib/shopify/operations";
-import { syncProductFromShopify } from "./process-webhook";
+import { syncProductFromShopify } from "@/lib/shopify/sync-product";
 
 const CHECKPOINT_KEY = "reconciliation_checkpoint";
 // Margen de solapamiento para no perder eventos en el borde del checkpoint

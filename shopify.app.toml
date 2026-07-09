@@ -2,13 +2,13 @@
 # Se despliega con: pnpm shopify:deploy
 #
 # OJO: Shopify exige que `redirect_urls` compartan host con `application_url`.
-# En desarrollo apuntan a localhost:3002; al desplegar a producción hay que
-# cambiar ambos a https://app.caramba.cl y volver a publicar.
+# Para desarrollo local hay que apuntar ambos a http://localhost:3002 y volver
+# a publicar (y luego revertir antes de tocar producción).
 
 client_id = "9e9fce25701f75cbd5c207069264a379"
 name = "Caramba B2B"
 handle = "caramba-b2b"
-application_url = "http://localhost:3002"
+application_url = "https://b2bcaramba.vercel.app"
 embedded = false
 
 [access_scopes]
@@ -20,11 +20,32 @@ use_legacy_install_flow = false
 
 [auth]
 redirect_urls = [
-  "http://localhost:3002/api/auth/shopify/callback",
+  "https://b2bcaramba.vercel.app/api/auth/shopify/callback",
+  "https://caramba-b2b.vercel.app/api/auth/shopify/callback",
   "https://app.caramba.cl/api/auth/shopify/callback",
 ]
 
 [webhooks]
 api_version = "2026-07"
 
-[build]
+  # Espejo en tiempo real. La entrega no está garantizada: la reconciliación
+  # horaria y el full-sync semanal corrigen lo que se pierda.
+  [[webhooks.subscriptions]]
+  topics = [
+    "products/create",
+    "products/update",
+    "products/delete",
+    "inventory_levels/update",
+    "inventory_levels/connect",
+    "inventory_levels/disconnect",
+    "inventory_items/update",
+    "inventory_items/delete",
+  ]
+  uri = "https://b2bcaramba.vercel.app/api/webhooks/shopify"
+
+  # Obligatorios por compliance de Shopify (GDPR). Respondemos 200 sin datos:
+  # no almacenamos clientes de la tienda, solo colaboradores de empresas B2B.
+  [webhooks.privacy_compliance]
+  customer_deletion_url = "https://b2bcaramba.vercel.app/api/webhooks/shopify/compliance"
+  customer_data_request_url = "https://b2bcaramba.vercel.app/api/webhooks/shopify/compliance"
+  shop_deletion_url = "https://b2bcaramba.vercel.app/api/webhooks/shopify/compliance"

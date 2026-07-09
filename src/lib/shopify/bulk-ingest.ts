@@ -26,8 +26,31 @@ export async function ingestBulkCatalog(jsonlUrl: string): Promise<{
   const res = await fetch(jsonlUrl);
   if (!res.ok) throw new Error(`Descarga del JSONL falló: HTTP ${res.status}`);
   const text = await res.text();
-  const parsed = parseBulkCatalogLines(text.split("\n"));
+  const raw = parseBulkCatalogLines(text.split("\n"));
   let deletedCount = 0;
+
+  // Dedup obligatorio: un ON CONFLICT DO UPDATE con la misma clave dos veces
+  // en el mismo INSERT falla con "cannot affect row a second time".
+  const dedupe = <T>(arr: T[], key: (t: T) => string) => {
+    const seen = new Set<string>();
+    return arr.filter((x) => {
+      const k = key(x);
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  };
+  const parsedProducts = dedupe(raw.products, (p) => String(p.shopifyId));
+  const productIds = new Set(parsedProducts.map((p) => p.shopifyId));
+  const parsed = {
+    products: parsedProducts,
+    // Variantes huérfanas romperían la FK contra products
+    variants: dedupe(
+      raw.variants.filter((v) => productIds.has(v.productId)),
+      (v) => String(v.shopifyId),
+    ),
+    levels: dedupe(raw.levels, (l) => `${l.inventoryItemId}:${l.locationId}`),
+  };
 
   await db.transaction(async (tx) => {
     for (let i = 0; i < parsed.products.length; i += CHUNK) {

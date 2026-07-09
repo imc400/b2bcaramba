@@ -47,12 +47,16 @@ export async function createOtp(
  * Timing-safe por diseño: compara hashes de largo fijo.
  *
  * DEMO_MASTER_OTP (env): clave estándar que valida para cualquier colaborador.
- * Pensada para demos ANTES de configurar Resend (los códigos reales solo se
- * ven en la consola del server). QUITAR la variable en producción.
+ * SOLO para demos locales antes de configurar Resend. El gate por NODE_ENV es
+ * la última línea de defensa: si la variable se filtra a producción, cualquiera
+ * entraría como cualquier colaborador. Nunca la quites.
  */
 export async function verifyOtp(collaboratorId: string, code: string): Promise<boolean> {
   const masterOtp = process.env.DEMO_MASTER_OTP;
-  if (masterOtp && code.trim() === masterOtp) return true;
+  if (masterOtp && process.env.NODE_ENV !== "production" && code.trim() === masterOtp) {
+    console.warn("[otp] acceso con DEMO_MASTER_OTP (solo desarrollo)");
+    return true;
+  }
   const candidate = await db
     .select()
     .from(otpCodes)

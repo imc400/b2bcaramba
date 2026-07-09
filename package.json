@@ -11,7 +11,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:generate": "drizzle-kit generate",
     "sync": "tsx scripts/sync-shopify.ts",
-    "shopify:deploy": "shopify app deploy"
+    "shopify:deploy": "shopify app deploy",
+    "test": "tsx --tsconfig tsconfig.scripts.json scripts/test-bulk-parse.ts && tsx --tsconfig tsconfig.scripts.json scripts/test-campaign.ts && tsx --tsconfig tsconfig.scripts.json scripts/test-order-authz.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",

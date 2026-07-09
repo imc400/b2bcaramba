@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   campaigns,
@@ -11,6 +11,8 @@ import {
   variants,
 } from "@/db/schema";
 import { inngest, orderCreated } from "@/inngest/client";
+import { isCampaignOpen } from "./campaign";
+import { getOrderableVariantIds } from "./catalog";
 import { runOrderEffectsInline } from "./order-effects";
 import { getFulfillmentLocationId } from "./shopify/location";
 
@@ -30,7 +32,17 @@ export type CreateOrderInput = {
 
 export type CreateOrderResult =
   | { ok: true; orderId: string; code: string }
-  | { ok: false; error: "cupo_excedido" | "sin_stock" | "campana_cerrada" | "seleccion_vacia"; detail?: string };
+  | {
+      ok: false;
+      error:
+        | "cupo_excedido"
+        | "sin_stock"
+        | "campana_cerrada"
+        | "seleccion_vacia"
+        | "seleccion_invalida"
+        | "fuera_de_catalogo";
+      detail?: string;
+    };
 
 /**
  * Crea un pedido de forma transaccional:
@@ -42,16 +54,38 @@ export type CreateOrderResult =
 export async function createOrder(input: CreateOrderInput): Promise<CreateOrderResult> {
   if (input.variantIds.length === 0) return { ok: false, error: "seleccion_vacia" };
 
+  // IDs repetidos burlarían el chequeo de stock (se validaría la misma fila N
+  // veces y se descontaría N unidades). Un regalo = una variante distinta.
+  const variantIds = [...new Set(input.variantIds)];
+  if (variantIds.length !== input.variantIds.length) {
+    return { ok: false, error: "seleccion_invalida", detail: "regalos repetidos" };
+  }
+
   const result = await db.transaction(async (tx): Promise<CreateOrderResult> => {
     const [campaign] = await tx
       .select()
       .from(campaigns)
       .where(eq(campaigns.id, input.campaignId));
-    if (!campaign || campaign.status !== "active") {
+    if (!campaign || !isCampaignOpen(campaign)) {
       return { ok: false, error: "campana_cerrada" };
     }
-    if (campaign.endsAt && campaign.endsAt < new Date()) {
-      return { ok: false, error: "campana_cerrada" };
+
+    // Autorización: las variantes deben pertenecer al catálogo de ESTA campaña
+    // (filtro de precio/tags/curaduría, producto activo, stock de seguridad).
+    // Sin esto, un cliente manipulado podría pedir cualquier variante de la
+    // tienda — incluso una fuera del presupuesto acordado con la empresa.
+    const permitidas = await getOrderableVariantIds(
+      variantIds,
+      campaign.catalogFilter,
+      campaign.safetyStock,
+    );
+    const noPermitida = variantIds.find((id) => !permitidas.has(id));
+    if (noPermitida !== undefined) {
+      return {
+        ok: false,
+        error: "fuera_de_catalogo",
+        detail: `variante ${noPermitida} no está en el catálogo de la campaña`,
+      };
     }
 
     // Lock del colaborador: serializa pedidos simultáneos del mismo usuario
@@ -73,55 +107,44 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
         ),
       );
     const remaining = collab.quota - (used?.n ?? 0);
-    if (input.variantIds.length > remaining) {
+    if (variantIds.length > remaining) {
       return { ok: false, error: "cupo_excedido", detail: `cupo restante: ${remaining}` };
     }
 
-    // Detalle + stock de cada variante, con lock de la fila de inventario
-    const lines: {
-      variantId: number;
-      productId: number;
-      inventoryItemId: number;
-      locationId: number;
-      title: string;
-      variantTitle: string | null;
-      imageUrl: string | null;
-      priceClp: number;
-    }[] = [];
+    // Una sola query bloquea las filas de inventario de todas las variantes.
+    // ORDER BY inventory_item_id es CRÍTICO: dos pedidos concurrentes que
+    // pidan los mismos productos en distinto orden se bloquearían mutuamente
+    // (deadlock) si cada uno tomara los locks en el orden de su carrito.
+    const lines = await tx
+      .select({
+        variantId: variants.shopifyId,
+        productId: products.shopifyId,
+        inventoryItemId: variants.inventoryItemId,
+        locationId: inventoryLevels.locationId,
+        available: inventoryLevels.available,
+        title: products.title,
+        variantTitle: variants.title,
+        imageUrl: sql<string | null>`coalesce(${variants.imageUrl}, ${products.featuredImageUrl})`,
+        priceClp: variants.priceClp,
+      })
+      .from(variants)
+      .innerJoin(products, eq(products.shopifyId, variants.productId))
+      .innerJoin(inventoryLevels, eq(inventoryLevels.inventoryItemId, variants.inventoryItemId))
+      .where(
+        and(
+          inArray(variants.shopifyId, variantIds),
+          // Stock de la bodega que despacha, no el de las tiendas físicas
+          eq(inventoryLevels.locationId, getFulfillmentLocationId()),
+        ),
+      )
+      .orderBy(asc(variants.inventoryItemId))
+      .for("update", { of: inventoryLevels });
 
-    for (const variantId of input.variantIds) {
-      const [row] = await tx
-        .select({
-          variantId: variants.shopifyId,
-          productId: products.shopifyId,
-          inventoryItemId: variants.inventoryItemId,
-          locationId: inventoryLevels.locationId,
-          available: inventoryLevels.available,
-          title: products.title,
-          variantTitle: variants.title,
-          imageUrl: sql<string | null>`coalesce(${variants.imageUrl}, ${products.featuredImageUrl})`,
-          priceClp: variants.priceClp,
-        })
-        .from(variants)
-        .innerJoin(products, eq(products.shopifyId, variants.productId))
-        .innerJoin(inventoryLevels, eq(inventoryLevels.inventoryItemId, variants.inventoryItemId))
-        .where(
-          and(
-            eq(variants.shopifyId, variantId),
-            // Stock de la bodega que despacha, no el de las tiendas físicas
-            eq(inventoryLevels.locationId, getFulfillmentLocationId()),
-          ),
-        )
-        .for("update", { of: inventoryLevels });
-
-      if (!row) return { ok: false, error: "sin_stock", detail: `variante ${variantId}` };
-      // El pedido consume 1: exigimos quedar >= 0 respetando stock de seguridad
-      // para la VISTA, pero para comprar basta que quede >= 0 real.
-      if (row.available < 1) {
-        return { ok: false, error: "sin_stock", detail: row.title };
-      }
-      lines.push(row);
+    if (lines.length !== variantIds.length) {
+      return { ok: false, error: "sin_stock", detail: "producto sin inventario en la bodega" };
     }
+    const agotada = lines.find((l) => l.available < 1);
+    if (agotada) return { ok: false, error: "sin_stock", detail: agotada.title };
 
     // Descuento inmediato del espejo (Shopify se ajusta async vía Inngest)
     for (const line of lines) {

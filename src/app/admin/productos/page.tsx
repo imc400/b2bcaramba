@@ -5,6 +5,7 @@ import { products, syncState } from "@/db/schema";
 import { AdminShell, StatCard } from "@/components/admin-shell";
 import { Badge, Input } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth/admin";
+import { getFulfillmentLocationId } from "@/lib/shopify/location";
 
 export default async function ProductosPage({
   searchParams,
@@ -17,10 +18,13 @@ export default async function ProductosPage({
   const rows = await db
     .select({
       product: products,
+      // SOLO la bodega que despacha online. Sumar las 5 locations mostraría
+      // stock que la bodega no puede despachar (y que el microsite oculta).
       totalStock: sql<number>`(
         SELECT coalesce(sum(il.available), 0)::int
         FROM variants v JOIN inventory_levels il ON il.inventory_item_id = v.inventory_item_id
         WHERE v.product_id = "products"."shopify_id"
+          AND il.location_id = ${getFulfillmentLocationId()}
       )`,
       minPrice: sql<number>`(
         SELECT min(v.price_clp)::int FROM variants v WHERE v.product_id = "products"."shopify_id"
