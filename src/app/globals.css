@@ -1,26 +1,90 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+ * Design system Caramba — tokens del Brandbook oficial (docs/brand-tokens.md)
+ * Reglas: fondo blanco dominante (≥50%), texto grafito, NUNCA fondo grafito
+ * en gráficas. Rojo = CTA primario, verde agua = éxito/confirmación.
+ */
+@theme {
+  --color-caramba-rojo: #cc644f;
+  --color-caramba-amarillo: #e1b946;
+  --color-caramba-oliva: #cfcb9d;
+  --color-caramba-rosa: #d4b1a6;
+  --color-caramba-verde: #8cbea3;
+  --color-caramba-grafito: #282828;
+
+  /* Tintes derivados para superficies suaves (fondos de cards, banners) */
+  --color-caramba-rojo-soft: #f7e7e3;
+  --color-caramba-amarillo-soft: #faf3dd;
+  --color-caramba-oliva-soft: #f4f3e8;
+  --color-caramba-rosa-soft: #f6edea;
+  --color-caramba-verde-soft: #e8f2ec;
+  --color-caramba-crema: #faf8f4;
+
+  /* Variantes de texto accesibles (AA sobre blanco y sobre sus -soft) */
+  --color-caramba-verde-texto: #3f7a5c;
+  --color-caramba-rojo-texto: #a34433;
+  --color-caramba-amarillo-texto: #8a6d1a;
+
+  --font-display: var(--font-capriola);
+  --font-sans: var(--font-spartan);
+
+  --radius-card: 1rem;
+
+  --animate-fade-up: fade-up 0.45s ease-out both;
+  --animate-pop-in: pop-in 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes check-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+::selection {
+  background: var(--color-caramba-amarillo-soft);
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: #ffffff;
+  color: var(--color-caramba-grafito);
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+h1,
+h2,
+h3,
+.font-display {
+  font-family: var(--font-display), var(--font-sans), system-ui, sans-serif;
 }

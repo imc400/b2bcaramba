@@ -1,0 +1,30 @@
+# Configuración de la app "Caramba B2B" (org Clicklab, Dev Dashboard).
+# Se despliega con: pnpm shopify:deploy
+#
+# OJO: Shopify exige que `redirect_urls` compartan host con `application_url`.
+# En desarrollo apuntan a localhost:3002; al desplegar a producción hay que
+# cambiar ambos a https://app.caramba.cl y volver a publicar.
+
+client_id = "9e9fce25701f75cbd5c207069264a379"
+name = "Caramba B2B"
+handle = "caramba-b2b"
+application_url = "http://localhost:3002"
+embedded = false
+
+[access_scopes]
+# read_products + read_inventory: espejo de catálogo y stock
+# write_inventory: descuento de stock al confirmar un pedido B2B
+# read_locations: identificar la bodega contra la que se descuenta
+scopes = "read_products,read_inventory,write_inventory,read_locations"
+use_legacy_install_flow = false
+
+[auth]
+redirect_urls = [
+  "http://localhost:3002/api/auth/shopify/callback",
+  "https://app.caramba.cl/api/auth/shopify/callback",
+]
+
+[webhooks]
+api_version = "2026-07"
+
+[build]
