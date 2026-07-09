@@ -1,102 +1,86 @@
 # HANDOFF — Plataforma Caramba B2B
 
-**Para el próximo agente/desarrollador (Opus 4.8).** Estado al 08-jul-2026, sesión de Fable 5.
-Lee también: `../docs/decision-arquitectura.md` (por qué de cada decisión) y `../docs/brand-tokens.md` (design system oficial del Brandbook).
+**Estado: EN PRODUCCIÓN.** Actualizado 09-jul-2026.
 
----
+- **App**: https://b2bcaramba.vercel.app (alias: caramba-b2b.vercel.app), región `gru1` (São Paulo)
+- **Panel**: /admin · password en `ADMIN_PASSWORD`
+- **Microsites**: /entel · /mercadolibre
+- **Repo**: github.com/imc400/b2bcaramba
+- **DB**: Supabase `ypmkejirsamzylxhwxdg` (sa-east-1)
+- **Shopify**: app "Caramba B2B" en la org de Partners **Clicklab** (`dev.shopify.com/dashboard/128991664/apps/394980851713`)
 
-## 1. Qué funciona HOY (verificado E2E en local)
-
-Flujo completo probado con Playwright-style en browser real:
-
-1. **Microsite** `http://localhost:3002/entel` — acceso co-branded, identificación por **correo o RUT** (normalización + Módulo 11 en `src/lib/auth/rut.ts`), **OTP 6 dígitos** al correo (sin Resend key se loguea a consola del server), sesión opaca en cookie HttpOnly.
-2. **Catálogo** sin precios, filtrado por la campaña (rango de precio/tags ocultos al colaborador), chips de edad y categoría desde tags reales de Shopify, stock de seguridad (no muestra productos con stock ≤ umbral), cupo visible y respetado.
-3. **Pedido** transaccional (`src/lib/orders.ts`): lock de colaborador + lock de inventario, valida cupo y stock, descuenta espejo local, código correlativo `CB-2026-NNNNN`, evento Inngest → ajuste en Shopify + correos. Pedidos de prueba: CB-2026-00001, CB-2026-00002.
-4. **Panel admin** `http://localhost:3002/admin` (password: `ADMIN_PASSWORD` en `.env.local`): Pedidos (stats, filtros por empresa/estado, cambio de estado con transiciones válidas, **export Excel real**), Empresas (crear/editar con preview de banner en vivo + conteo de productos que matchean el filtro), Colaboradores (**import .xlsx/.csv probado**, detección flexible de columnas, upsert, errores por fila), Productos (espejo, solo lectura), Ajustes (destinatarios de correo por empresa/global, estado de conexión Shopify, botón de sync).
-5. **Pipeline de sync completo** (código listo, esperando token): receptor de webhooks con HMAC + dedup (`/api/webhooks/shopify`), funciones Inngest (`process-webhook` idempotente con descarte de eventos viejos, `reconcile` cada hora, `full-sync` semanal con **ingesta JSONL implementada y testeada** — `scripts/test-bulk-parse.ts` pasa).
-
-`pnpm build`, `pnpm exec tsc --noEmit` y `pnpm lint` **verdes**.
-
-## 2. Cómo correr
+## Verificar que todo está sano
 
 ```bash
-cd caramba-b2b
-pnpm install
-# Postgres 17 local ya corre via Homebrew; DB caramba_b2b ya migrada y seedeada
-pnpm dev --port 3002        # 3000/3001 ocupados por otros proyectos de Ignacio
-npx inngest-cli@latest dev  # opcional: para procesar eventos (pedidos funcionan sin él)
-pnpm seed                   # re-seed: catálogo real de caramba.cl + demos
-pnpm tsx scripts/test-bulk-parse.ts  # test del parser JSONL
+pnpm test            # parser JSONL, campañas/DST, autorización de pedidos
+pnpm verify:shopify  # E2E contra la tienda REAL: bodega, webhooks, CAS, espejo
+pnpm webhooks:list   # suscripciones activas
 ```
 
-Usuarios demo (campaña Entel): `juan.perez@entel.cl` (cupo agotado), `igblancora@gmail.com` / RUT `17.654.321-6` (cupo 2, usado 1), `m.soto@entel.cl`, `r.fuentes@entel.cl`. El código OTP aparece en la consola del dev server.
+`verify:shopify` cambia el stock de un producto +1 y lo restaura: deja la tienda exactamente como estaba.
 
-## 3. Shopify: RESUELTO (09-jul-2026)
+## Reglas que no se pueden romper
 
-La app **"Caramba B2B"** vive en la org de Partners **Clicklab** (`dev.shopify.com/dashboard/128991664/apps/394980851713`), no en el Dev Dashboard personal. Su config se versiona en `shopify.app.toml` y se publica con `pnpm shopify:deploy`.
+1. **Una sola bodega.** La tienda tiene 5 locations; solo **La Forja 8600 (`35186606180`)** despacha online. Toda lectura/escritura de stock pasa por `getFulfillmentLocationId()` (`src/lib/shopify/location.ts`). Sin ese filtro, el catálogo ofrece unidades que están en la vitrina de Los Trapenses.
+2. **El colaborador nunca ve precios.** Ni en UI, ni en HTML, ni en respuestas de server actions.
+3. **`createOrder` es la autoridad de autorización.** Valida que cada variante esté en el catálogo de SU campaña (`getOrderableVariantIds`). Nunca confiar en los `variantIds` del cliente.
+4. **`DEMO_MASTER_OTP` jamás en producción.** Tiene gate por `NODE_ENV`, pero no la definas igual.
+5. **El espejo local muestra; Shopify comprometa.** El descuento real ocurre en Shopify con compare-and-swap.
 
-- El **client credentials grant NO sirve** con esta app: la tienda no pertenece a la org (`shop_not_permitted`). Se usa el OAuth authorization code de `/api/auth/shopify/install`.
-- Shopify exige que `redirect_urls` compartan host con `application_url`. En dev ambos apuntan a `localhost:3002`; **al desplegar hay que cambiar `application_url` a `https://app.caramba.cl` y republicar**.
-- Token guardado en `sync_state.shopify_admin_token`. Scopes: `read_products, read_inventory, write_inventory, read_locations`. Plan de la tienda: rate limit 2000 pts (no Standard).
-- **Bodega**: la tienda tiene 5 locations; solo **`La Forja 8600` (35186606180)** tiene `fulfillsOnlineOrders` + `shipsInventory`. `SHOPIFY_LOCATION_ID` en env; `getFulfillmentLocationId()` se usa para filtrar catálogo, curaduría y pedidos. **Sin ese filtro se sumaría el stock de las tiendas físicas.**
-- `pnpm sync` hace el bulk sync completo (`--cache` reusa el JSONL de `/tmp/caramba-bulk.jsonl`). Resultado real: 5.074 productos, 3.839 activos, 25.246 niveles, 15.076 unidades en bodega, 924 productos con stock vendible.
+## Shopify: lo que aprendimos con datos reales (API 2026-07)
 
-### Gotchas del JSONL de Bulk Operations (descubiertos con datos reales)
-- Los hijos de conexiones anidadas **no traen `id`** cuando el tipo no lo expone: las imágenes de galería llegan como `{image, __parentId}` y los niveles de inventario como `{location, quantities, updatedAt, __parentId}`. El `__parentId` de un InventoryLevel es el **gid de la variante**, no del inventoryItem.
-- El status de producto puede ser **`UNLISTED`** (no solo ACTIVE/ARCHIVED/DRAFT). Enum ampliado en `drizzle/0001_add_unlisted_status.sql`.
-- El parser (`bulk-parse.ts`) hace **dos pasadas** y no depende del orden de las líneas. Test: `pnpm tsx scripts/test-bulk-parse.ts`.
+- **`inventoryAdjustQuantities` exige `changeFromQuantity`** (compare-and-swap) **y la directiva `@idempotent(key:)`** (obligatoria desde 2026-04). Sin ambas, la mutación falla. El CAS es la garantía de exactamente-una-vez: si el stock cambió, Shopify **rechaza la mutación completa sin escribir nada**. `applyInventoryDelta` (`src/lib/order-effects.ts`) usa eso para distinguir "mi escritura ya llegó" de "una venta B2C se llevó unidades".
+- **`quantityAfterChange` puede venir `null`.** Nunca uses `?? 0` para detectar oversell: relee la cantidad con `getInventoryQuantities`.
+- **El JSONL de Bulk Operations**: los hijos de conexiones anidadas **no traen `id`**. Las imágenes de galería llegan como `{image, __parentId}` y los niveles de inventario como `{location, quantities, __parentId}`, donde `__parentId` es el **gid de la variante**. El parser hace dos pasadas y no depende del orden.
+- **`status` de producto puede ser `UNLISTED`**, no solo ACTIVE/ARCHIVED/DRAFT.
+- **Los webhooks declarados en `shopify.app.toml` no se materializaron.** Se registran con `pnpm webhooks:register` (idempotente, vía Admin API). Verificado: llegan en ~4 segundos.
+- **`client_credentials` no sirve**: la tienda no pertenece a la org de la app (`shop_not_permitted`). Se usa el OAuth de `/api/auth/shopify/install`. Shopify exige que `redirect_urls` compartan host con `application_url`.
 
-**Pendiente para "tiempo real" completo**: los webhooks no se pueden registrar contra `localhost`. Al desplegar a una URL pública, crear las suscripciones (`products/create|update|delete`, `inventory_levels/update`, `inventory_items/delete`) apuntando a `/api/webhooks/shopify` con `SHOPIFY_WEBHOOK_SECRET` = client secret.
+## Arquitectura del espejo (3 capas)
 
-## 3b. Notas históricas del token (ya no bloqueante)
+| Capa | Mecanismo | Cuándo |
+|---|---|---|
+| Tiempo real | 7 webhooks → `/api/webhooks/shopify` | ~4s |
+| Reparación | reconciliación incremental por `updated_at` (repara stock también) | cada hora |
+| Red de seguridad | `pnpm sync` / full-sync por Bulk Operations | semanal o a mano |
 
-La app está instalada en `caramba-juguetes.myshopify.com`. Tenemos client ID + secret (`.env.local`). **El client credentials grant NO funciona** (`shop_not_permitted`: la tienda no pertenece a la organización del Dev Dashboard donde se creó la app). Dos caminos, en orden de simpleza:
+Los webhooks corren por Inngest si `INNGEST_EVENT_KEY` está definida; si no, **inline** (mismo código, `src/lib/shopify/webhook-processor.ts`). Igual con los efectos de pedido (`src/lib/order-effects.ts`).
 
-- **Camino A (si la app se creó en la tienda: Admin → Configuración → Aplicaciones → Desarrollo de aplicaciones):** ahí mismo está el "Admin API access token" (`shpat_…`) → pegarlo en `SHOPIFY_ADMIN_ACCESS_TOKEN` de `.env.local`. Listo.
-- **Camino B (si es app del Dev Dashboard de otra organización):** en la config de la app agregar redirect URL `http://localhost:3002/api/auth/shopify/callback`, luego visitar `http://localhost:3002/api/auth/shopify/install` y aprobar. El callback guarda el token en DB (`sync_state`, clave `shopify_admin_token`) — las rutas OAuth ya están implementadas y el cliente lee env → DB en ese orden.
+## Pendientes priorizados
 
-Scopes necesarios: `read_products, read_inventory, write_inventory`.
+**P0 — antes del primer cliente real**
+1. **Resend**: crear cuenta, verificar dominio caramba.cl, poner `RESEND_API_KEY`. Hoy los correos (OTP y avisos de pedido) solo se loguean.
+2. **Dominio propio**: apuntar `app.caramba.cl` a Vercel (CNAME). El `redirect_url` ya está en `shopify.app.toml`; tras el cambio, correr `pnpm shopify:deploy` y `pnpm webhooks:register` con el nuevo `NEXT_PUBLIC_APP_URL`. **No tocar el DNS de caramba.cl** (está en Shopify).
+3. **Auth admin real**: hoy es una password compartida (con rate limit por IP). Migrar a Supabase Auth con cuentas por persona.
 
-**Con token en mano:** (1) obtener el `SHOPIFY_LOCATION_ID` (query `locations(first:5)`), (2) correr full sync (botón en Ajustes o evento `sync/full.requested` — reemplaza el seed con datos+stock REALES), (3) crear las suscripciones de webhooks apuntando a `/api/webhooks/shopify` (topics en README), con `SHOPIFY_WEBHOOK_SECRET` = client secret (apps Dev Dashboard firman con él).
+**P1 — escalabilidad y robustez**
+4. **RLS en Postgres** (`company_id` + `current_setting('app.tenant_id')`) como defensa en profundidad del multi-tenant.
+5. Paginación en `/admin/pedidos` (200 filas) y `/admin/colaboradores` (500) y en el catálogo del microsite (60).
+6. Import de colaboradores: 2 queries por fila → batch + transacción.
+7. Reconciliación: un step de Inngest por producto cambiado → agrupar.
+8. Poda de `webhook_events`, `otp_codes`, `sessions`, `rate_limits` (crecen sin límite).
+9. Escapar HTML en los correos internos (nombre/dirección del colaborador se interpolan).
+10. `/api/auth/shopify/install` sin gate de admin: cualquiera puede iniciar el OAuth.
 
-## 4. Gotchas descubiertos (no tropezar dos veces)
+**P2 — deuda de mantención** (ver hallazgos menores en el informe de revisión)
+Estados de pedido duplicados en 3 componentes, "cupo usado" calculado en 3 lugares, `loadOrderBundle` reimplementado en el detalle, tokens de color hardcodeados.
 
-- **Inngest v4** (instalado 4.11): NO existe `EventSchemas`. Se usa `eventType("nombre", {schema: zod})` + `createFunction({id, retries, triggers: [evento, cron("...")]}, handler)` — 2 argumentos. Enviar: `inngest.send(evento.create({...}))`.
-- **Drizzle en subqueries SQL crudas**: `${tabla.columna}` se renderiza SIN calificar en selects de una sola tabla → dentro de subqueries resuelve mal (error o datos silenciosamente incorrectos). Calificar a mano: `"products"."shopify_id"` (ya corregido en colaboradores y productos).
-- **Pool de Postgres en dev**: cada recarga HMR de Turbopack creaba un pool nuevo → "too many clients". Resuelto cacheando el cliente en `globalThis` (`src/db/index.ts`). NO revertir.
-- **`revalidatePath` después de crear pedido**: re-renderiza `/carrito` server-side, el redirect por cupo=0 le gana al `router.push` del cliente → nunca se ve `/listo`. Por eso `submitOrderAction` NO revalida (comentado en el código).
-- **Layouts del App Router no se re-renderizan en navegación soft** → el badge de cupo del header queda stale tras un pedido; se resuelve con `router.refresh()` post-push (ya aplicado).
-- **`orderCreate` de Shopify tiene `inventoryBehaviour: BYPASS` por default** — no lo usamos, pero si alguna vez se crean pedidos en Shopify, recordarlo.
-- **Los zips del brandpack** tienen nombres CP437-mangled; extraer con Python re-encoding (ya extraído en `../branding/`).
-- Los datos del seed vienen del `products.json` público de caramba.cl (2000 productos reales, imágenes CDN reales) pero **stock ficticio** (muchos `available:false` reales). El stock verdadero llega con el primer full sync.
+## Comandos
 
-## 5. Pendientes priorizados
+```bash
+pnpm dev --port 3002        # 3000/3001 ocupados por otros proyectos
+pnpm seed                   # datos demo (NO usar contra producción)
+pnpm sync                   # full-sync del catálogo (--cache reusa el JSONL)
+pnpm db:migrate             # con DIRECT_DATABASE_URL apuntando a la DB destino
+pnpm shopify:deploy         # publica shopify.app.toml
+vercel deploy --prod --yes
+```
 
-**P0 — para salir a staging:**
-1. Token Shopify (arriba) → full sync real → verificar espejo contra el admin de Shopify.
-2. Registrar webhooks en la app (products/create|update|delete, inventory_levels/update, inventory_items/delete) y probar el ciclo: editar producto en Shopify → verlo cambiar en el espejo.
-3. `SHOPIFY_LOCATION_ID` en env y verificación del ajuste de stock real al crear pedido (función `process-order-created`, hoy hace skip con warning si no hay token).
-4. Deploy: Vercel (gru1) + Supabase (sa-east-1) + Inngest Cloud + Resend (dominio caramba.cl verificado). `.env.example` tiene todas las variables. Migración: `pnpm drizzle-kit migrate` con `DIRECT_DATABASE_URL`.
+## Gotchas del stack
 
-**P1 — antes de producción con cliente real:**
-5. **RLS en Postgres** (multi-tenant): políticas por `company_id` con `current_setting('app.tenant_id')` + rol sin BYPASSRLS + tests de fuga (patrón en decision-arquitectura.md §2.5). Hoy el aislamiento es solo a nivel de queries.
-6. Auth admin real: reemplazar password única por Supabase Auth (cuentas para Javiera + equipo), mantener `requireAdmin()` como interfaz.
-7. Rate limiting HTTP en `identifyAction`/`verifyOtpAction` por IP (hoy solo hay rate limit por colaborador en OTP). Vercel Firewall o `@upstash/ratelimit`.
-8. Anulación de pedido → reponer stock en Shopify (delta positivo, `reason: restock`) vía Inngest (TODO en `admin/pedidos/actions.ts`).
-9. Página de detalle de producto en microsite (modal o ruta) con galería — hoy la card es todo.
-10. Paginación del catálogo (hoy limit 60) e infinite scroll.
-
-**P2 — calidad enterprise:**
-11. Tests: unit para `catalog.ts` (filtros), `orders.ts` (carreras de cupo/stock — hay locks, testearlos), RUT; E2E Playwright del flujo colaborador.
-12. Healthcheck de webhooks (silencio anómalo → recrear suscripción) + alertas (email a Ignacio).
-13. Subida de logo de empresa a Supabase Storage (hoy es URL manual).
-14. Métricas/estadísticas por campaña en el panel (gráfico de pedidos por día, top productos).
-15. Borrado/anonimización de nóminas al cierre de campaña (Ley 21.719, vigencia 1-dic-2026) + DPA con empresas.
-
-## 6. Convenciones
-
-- Español en UI, comentarios y commits. Marca: "Caramba" (primera C mayúscula).
-- Dinero CLP como enteros (`priceClp`). El colaborador JAMÁS ve precios (ni en HTML/JSON).
-- Colores/tipografías SOLO del design system (`globals.css` @theme + `docs/brand-tokens.md`). Fondo blanco dominante, nunca fondo grafito.
-- Componentes UI en `src/components/ui.tsx` — extender ahí, no crear sistemas paralelos.
-- Todo efecto post-pedido va por Inngest (durable, retryable), nunca inline en la request.
+- **Inngest v4**: `createFunction({triggers: [evento, cron("...")]}, handler)` — 2 args. No existe `EventSchemas`. Los `step.run` serializan Dates a strings: recarga el bundle dentro de cada paso.
+- **Drizzle**: en subqueries SQL crudas, `${tabla.columna}` no se califica → escribe `"products"."shopify_id"` a mano. Y si dos tablas tienen una columna con el mismo nombre (`products.shopify_id` y `variants.shopify_id`), la subquery necesita alias explícito.
+- **`server-only`** rompe los scripts: usa `pnpm tsx --tsconfig tsconfig.scripts.json` (stub en `scripts/stubs/`).
+- **Pool de Postgres en dev**: el cliente se cachea en `globalThis` (HMR crearía un pool por recarga). No revertir.
+- **`revalidatePath` tras crear un pedido** re-renderiza `/carrito`, cuyo redirect por cupo=0 le gana al `router.push` hacia `/listo`. Por eso no se revalida ahí.
+- **Turbopack**: si tras reiniciar aparece `Cannot find module 'drizzle-orm'`, es caché corrupta → `rm -rf .next`.
