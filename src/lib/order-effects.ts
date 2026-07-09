@@ -1,10 +1,11 @@
 import "server-only";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, eq, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   campaigns,
   collaborators,
   companies,
+  inventoryLevels,
   notificationRecipients,
   orderItems,
   orders,
@@ -14,7 +15,7 @@ import {
   orderNotificationHtml,
   sendEmail,
 } from "@/lib/email/send";
-import { adjustInventory } from "@/lib/shopify/operations";
+import { adjustInventory, getInventoryQuantities } from "@/lib/shopify/operations";
 import { getFulfillmentLocationId } from "@/lib/shopify/location";
 import { getAdminAccessToken } from "@/lib/shopify/token";
 
@@ -59,11 +60,103 @@ export function isShopifyAdjustEnabled(): boolean {
   return process.env.SHOPIFY_STOCK_ADJUST_ENABLED === "true";
 }
 
+const MAX_INTENTOS_AJUSTE = 3;
+
+/** Shopify rechaza el ajuste completo cuando el stock cambió bajo nuestros pies. */
+function esErrorDeCarrera(err: unknown): boolean {
+  return /changeFromQuantity|no longer matches|persisted quantity/i.test(String(err));
+}
+
 /**
- * Descuenta el stock del pedido en Shopify (bodega de despacho).
- * Si alguna cantidad queda negativa (carrera con la venta B2C), marca el
- * pedido como requiere_revision.
+ * Ajusta el stock del pedido en Shopify (bodega de despacho).
+ *
+ * Desde la API 2026-07 el ajuste es un compare-and-swap: hay que declarar la
+ * cantidad que creemos que hay (`changeFromQuantity`), y Shopify rechaza la
+ * mutación COMPLETA —sin escribir nada— si el valor ya no coincide. Ese
+ * rechazo atómico es nuestra garantía de exactamente-una-vez:
+ *
+ *  - Si el ajuste falla por carrera, sabemos que no se aplicó: releemos y
+ *    reintentamos con el valor fresco (la venta B2C se llevó unidades).
+ *  - Si nos quedamos sin respuesta (timeout) y al reintentar el CAS falla,
+ *    comparamos contra la cantidad esperada: si coincide, nuestra escritura sí
+ *    había llegado y no hay nada que repetir.
+ *
+ * La directiva @idempotent (obligatoria desde 2026-04) cubre además el caso de
+ * dos entregas simultáneas del mismo request.
  */
+async function applyInventoryDelta(
+  bundle: OrderBundle,
+  signo: 1 | -1,
+  reason: "correction" | "restock",
+): Promise<void> {
+  const locationId = getFulfillmentLocationId();
+  const itemIds = bundle.items.map((i) => i.inventoryItemId);
+  const referenceUri = `${process.env.NEXT_PUBLIC_APP_URL}/admin/pedidos/${bundle.order.id}`;
+
+  for (let intento = 1; intento <= MAX_INTENTOS_AJUSTE; intento++) {
+    const actuales = await getInventoryQuantities(itemIds, locationId);
+    if (actuales.size !== itemIds.length) {
+      throw new Error(
+        `[order ${bundle.order.code}] hay ítems sin inventario en la bodega ${locationId}`,
+      );
+    }
+
+    const cambios = bundle.items.map((i) => ({
+      inventoryItemId: i.inventoryItemId,
+      locationId,
+      delta: signo * i.quantity,
+      changeFromQuantity: actuales.get(i.inventoryItemId)!,
+    }));
+    const esperadas = new Map(
+      cambios.map((c) => [c.inventoryItemId, c.changeFromQuantity + c.delta]),
+    );
+
+    try {
+      await adjustInventory(
+        cambios,
+        reason,
+        referenceUri,
+        `caramba-order-${bundle.order.id}-${reason}-${intento}`,
+      );
+    } catch (err) {
+      if (!esErrorDeCarrera(err)) throw err;
+
+      // ¿Falló porque nuestra propia escritura ya había llegado (timeout)?
+      const despues = await getInventoryQuantities(itemIds, locationId);
+      const yaAplicado = [...esperadas].every(([id, q]) => despues.get(id) === q);
+      if (yaAplicado) {
+        console.warn(`[order ${bundle.order.code}] el ajuste ya estaba aplicado, no se repite`);
+      } else if (intento < MAX_INTENTOS_AJUSTE) {
+        console.warn(
+          `[order ${bundle.order.code}] venta B2C simultánea cambió el stock; reintento ${intento + 1}`,
+        );
+        continue;
+      } else {
+        throw err;
+      }
+    }
+
+    // `quantityAfterChange` de la respuesta puede venir null: releemos la
+    // cantidad real para detectar de verdad un stock negativo (oversell).
+    const finales = await getInventoryQuantities(itemIds, locationId);
+    const negativo = [...finales.entries()].find(([, cantidad]) => cantidad < 0);
+    if (negativo) {
+      await db
+        .update(orders)
+        .set({
+          status: "requiere_revision",
+          stockIssue: {
+            variantId: negativo[0],
+            resultingQuantity: negativo[1],
+            detectedAt: new Date().toISOString(),
+          },
+        })
+        .where(eq(orders.id, bundle.order.id));
+    }
+    return;
+  }
+}
+
 export async function adjustShopifyForOrder(bundle: OrderBundle): Promise<void> {
   if (!isShopifyAdjustEnabled()) {
     console.warn(
@@ -71,37 +164,11 @@ export async function adjustShopifyForOrder(bundle: OrderBundle): Promise<void> 
     );
     return;
   }
-  const token = await getAdminAccessToken();
-  if (!token) {
+  if (!(await getAdminAccessToken())) {
     console.warn(`[order ${bundle.order.code}] sin token Admin: ajuste remoto omitido`);
     return;
   }
-  const locationId = getFulfillmentLocationId();
-
-  const results = await adjustInventory(
-    bundle.items.map((i) => ({
-      inventoryItemId: i.inventoryItemId,
-      locationId,
-      delta: -i.quantity,
-    })),
-    "correction",
-    `${process.env.NEXT_PUBLIC_APP_URL}/admin/pedidos/${bundle.order.id}`,
-  );
-
-  const negative = results.find((r) => r.resultingQuantity < 0);
-  if (negative) {
-    await db
-      .update(orders)
-      .set({
-        status: "requiere_revision",
-        stockIssue: {
-          variantId: negative.inventoryItemId,
-          resultingQuantity: negative.resultingQuantity,
-          detectedAt: new Date().toISOString(),
-        },
-      })
-      .where(eq(orders.id, bundle.order.id));
-  }
+  await applyInventoryDelta(bundle, -1, "correction");
 }
 
 /** Repone el stock de un pedido anulado (espejo + Shopify). */
@@ -110,8 +177,6 @@ export async function restockOrder(orderId: string): Promise<void> {
   const locationId = getFulfillmentLocationId();
 
   // Espejo local siempre
-  const { inventoryLevels } = await import("@/db/schema");
-  const { sql } = await import("drizzle-orm");
   for (const item of bundle.items) {
     await db
       .update(inventoryLevels)
@@ -128,17 +193,8 @@ export async function restockOrder(orderId: string): Promise<void> {
     console.warn(`[order ${bundle.order.code}] restock remoto omitido (gate desactivado)`);
     return;
   }
-  const token = await getAdminAccessToken();
-  if (!token) return;
-  await adjustInventory(
-    bundle.items.map((i) => ({
-      inventoryItemId: i.inventoryItemId,
-      locationId,
-      delta: i.quantity,
-    })),
-    "restock",
-    `${process.env.NEXT_PUBLIC_APP_URL}/admin/pedidos/${orderId}`,
-  );
+  if (!(await getAdminAccessToken())) return;
+  await applyInventoryDelta(bundle, 1, "restock");
 }
 
 /** Notifica el pedido a los destinatarios configurados (global + empresa). */

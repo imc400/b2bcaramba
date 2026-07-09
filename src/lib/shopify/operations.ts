@@ -188,12 +188,66 @@ export type InventoryAdjustment = {
   inventoryItemId: number;
   locationId: number;
   delta: number;
+  /**
+   * Cantidad que creemos que hay ahora. Desde la API 2026-07 es OBLIGATORIA:
+   * Shopify aplica compare-and-swap y rechaza el ajuste si el stock cambió
+   * entre nuestra lectura y la escritura. Es exactamente la protección que
+   * queremos contra una venta B2C simultánea.
+   */
+  changeFromQuantity: number;
 };
 
+/** Cantidades `available` actuales en Shopify (fuente de verdad). */
+export async function getInventoryQuantities(
+  inventoryItemIds: number[],
+  locationId: number,
+): Promise<Map<number, number>> {
+  if (inventoryItemIds.length === 0) return new Map();
+  const data = await shopifyAdmin<{
+    nodes: ({
+      id: string;
+      inventoryLevel: { quantities: { name: string; quantity: number }[] } | null;
+    } | null)[];
+  }>(
+    /* GraphQL */ `
+      query InventoryQuantities($ids: [ID!]!, $locationId: ID!) {
+        nodes(ids: $ids) {
+          ... on InventoryItem {
+            id
+            inventoryLevel(locationId: $locationId) {
+              quantities(names: ["available"]) { name quantity }
+            }
+          }
+        }
+      }
+    `,
+    {
+      ids: inventoryItemIds.map((id) => `gid://shopify/InventoryItem/${id}`),
+      locationId: `gid://shopify/Location/${locationId}`,
+    },
+  );
+
+  const map = new Map<number, number>();
+  for (const node of data.nodes) {
+    if (!node?.inventoryLevel) continue;
+    const available = node.inventoryLevel.quantities.find((q) => q.name === "available");
+    if (available) map.set(numericId(node.id), available.quantity);
+  }
+  return map;
+}
+
+/**
+ * Ajusta inventario en Shopify.
+ *
+ * `idempotencyKey` es OBLIGATORIA desde la API 2026-04 (directiva @idempotent).
+ * Deriva del pedido y del sentido del ajuste, de modo que un reintento —de
+ * Inngest, de un timeout o de un doble click— no descuenta el stock dos veces.
+ */
 export async function adjustInventory(
   adjustments: InventoryAdjustment[],
   reason: "correction" | "restock" = "correction",
-  referenceUri?: string,
+  referenceUri: string | undefined,
+  idempotencyKey: string,
 ): Promise<{ inventoryItemId: number; locationId: number; resultingQuantity: number }[]> {
   const data = await shopifyAdmin<{
     inventoryAdjustQuantities: {
@@ -209,8 +263,8 @@ export async function adjustInventory(
     };
   }>(
     /* GraphQL */ `
-      mutation AdjustInventory($input: InventoryAdjustQuantitiesInput!) {
-        inventoryAdjustQuantities(input: $input) {
+      mutation AdjustInventory($input: InventoryAdjustQuantitiesInput!, $idempotencyKey: String!) {
+        inventoryAdjustQuantities(input: $input) @idempotent(key: $idempotencyKey) {
           inventoryAdjustmentGroup {
             changes {
               item { id }
@@ -224,6 +278,7 @@ export async function adjustInventory(
       }
     `,
     {
+      idempotencyKey,
       input: {
         reason,
         name: "available",
@@ -232,6 +287,7 @@ export async function adjustInventory(
           inventoryItemId: `gid://shopify/InventoryItem/${a.inventoryItemId}`,
           locationId: `gid://shopify/Location/${a.locationId}`,
           delta: a.delta,
+          changeFromQuantity: a.changeFromQuantity,
         })),
       },
     },
