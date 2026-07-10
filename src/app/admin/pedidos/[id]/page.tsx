@@ -31,7 +31,7 @@ export default async function PedidoDetallePage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireAdmin();
+  const actor = await requireAdmin();
   const { id } = await params;
 
   const [row] = await db
@@ -63,6 +63,7 @@ export default async function PedidoDetallePage({
   return (
     <AdminShell
       active="/admin/pedidos"
+      usuario={actor}
       title={`Pedidos › ${order.code}`}
       actions={<StatusSelect orderId={order.id} current={order.status} />}
     >

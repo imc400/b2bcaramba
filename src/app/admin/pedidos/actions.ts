@@ -16,7 +16,7 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
 };
 
 export async function updateOrderStatusAction(orderId: string, newStatus: string): Promise<void> {
-  await requireAdmin();
+  const actor = await requireAdmin();
 
   const [order] = await db.select().from(orders).where(eq(orders.id, orderId));
   if (!order) throw new Error("Pedido no existe");
@@ -34,7 +34,7 @@ export async function updateOrderStatusAction(orderId: string, newStatus: string
     .where(eq(orders.id, orderId));
 
   await db.insert(auditLog).values({
-    actorEmail: "admin",
+    actorEmail: actor.email,
     action: "order_status_change",
     entity: "order",
     entityId: orderId,

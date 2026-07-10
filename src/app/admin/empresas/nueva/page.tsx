@@ -3,10 +3,10 @@ import { requireAdmin } from "@/lib/auth/admin";
 import { CompanyForm } from "../company-form";
 
 export default async function NuevaEmpresaPage() {
-  await requireAdmin();
+  const actor = await requireAdmin();
 
   return (
-    <AdminShell active="/admin/empresas" title="Empresas › Nueva empresa">
+    <AdminShell active="/admin/empresas" usuario={actor} title="Empresas › Nueva empresa">
       <CompanyForm
         appUrl={process.env.NEXT_PUBLIC_APP_URL ?? ""}
         initial={{

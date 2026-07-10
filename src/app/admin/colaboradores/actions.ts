@@ -1,12 +1,14 @@
 "use server";
 
 import ExcelJS from "exceljs";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { auditLog, campaigns, collaborators } from "@/db/schema";
+import { auditLog, campaigns, collaborators, companies } from "@/db/schema";
 import { requireAdmin } from "@/lib/auth/admin";
 import { isValidRut, normalizeRut } from "@/lib/auth/rut";
+import { isCampaignOpen } from "@/lib/campaign";
+import { collaboratorInviteHtml, sendEmail } from "@/lib/email/send";
 
 export type ImportResult = {
   status: "idle" | "ok" | "error";
@@ -25,7 +27,7 @@ export async function importCollaboratorsAction(
   _prev: ImportResult,
   formData: FormData,
 ): Promise<ImportResult> {
-  await requireAdmin();
+  const actor = await requireAdmin();
 
   const campaignId = String(formData.get("campaignId") ?? "");
   const file = formData.get("file") as File | null;
@@ -139,7 +141,7 @@ export async function importCollaboratorsAction(
   }
 
   await db.insert(auditLog).values({
-    actorEmail: "admin",
+    actorEmail: actor.email,
     action: "collaborators_import",
     entity: "campaign",
     entityId: campaignId,
@@ -160,4 +162,73 @@ export async function deleteCollaboratorAction(id: string): Promise<void> {
   await requireAdmin();
   await db.delete(collaborators).where(eq(collaborators.id, id));
   revalidatePath("/admin/colaboradores");
+}
+
+export type InviteResult = { enviadas: number; sinCorreo: number; error?: string };
+
+/**
+ * Envía a cada colaborador el link de su empresa.
+ *
+ * Solo a quienes aún no lo recibieron (`invitedAt` nulo): reimportar el Excel
+ * o apretar el botón dos veces no vuelve a escribirle a nadie. Marcamos
+ * `invitedAt` recién cuando el correo salió.
+ */
+export async function sendCollaboratorInvitesAction(campaignId: string): Promise<InviteResult> {
+  const actor = await requireAdmin();
+
+  const [ctx] = await db
+    .select({ campaign: campaigns, company: companies })
+    .from(campaigns)
+    .innerJoin(companies, eq(companies.id, campaigns.companyId))
+    .where(eq(campaigns.id, campaignId));
+  if (!ctx) return { enviadas: 0, sinCorreo: 0, error: "La campaña no existe." };
+  if (!isCampaignOpen(ctx.campaign)) {
+    return { enviadas: 0, sinCorreo: 0, error: "La campaña no está abierta: nadie podría entrar." };
+  }
+
+  const pendientes = await db
+    .select()
+    .from(collaborators)
+    .where(and(eq(collaborators.campaignId, campaignId), isNull(collaborators.invitedAt)));
+
+  const sinCorreo = pendientes.filter((c) => !c.email).length;
+  const conCorreo = pendientes.filter((c) => c.email);
+  const url = `${process.env.NEXT_PUBLIC_APP_URL}/${ctx.company.slug}`;
+
+  let enviadas = 0;
+  for (const colaborador of conCorreo) {
+    try {
+      await sendEmail({
+        to: [colaborador.email!],
+        subject: `Tu regalo de ${ctx.company.name}, cortesía de Caramba`,
+        html: collaboratorInviteHtml({
+          companyName: ctx.company.name,
+          bannerTitle: ctx.campaign.bannerTitle,
+          url,
+          quota: colaborador.quota,
+          endsAt: ctx.campaign.endsAt,
+        }),
+      });
+      await db
+        .update(collaborators)
+        .set({ invitedAt: new Date() })
+        .where(eq(collaborators.id, colaborador.id));
+      enviadas++;
+    } catch (err) {
+      // Un correo rebotado no debe frenar a los demás; el colaborador queda
+      // sin marcar y entra en el próximo envío.
+      console.error(`[invitación] falló para ${colaborador.email}:`, err);
+    }
+  }
+
+  await db.insert(auditLog).values({
+    actorEmail: actor.email,
+    action: "collaborators_invite",
+    entity: "campaign",
+    entityId: campaignId,
+    meta: { enviadas, sinCorreo, total: pendientes.length },
+  });
+
+  revalidatePath("/admin/colaboradores");
+  return { enviadas, sinCorreo };
 }

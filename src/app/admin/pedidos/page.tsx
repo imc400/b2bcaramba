@@ -28,7 +28,7 @@ export default async function PedidosPage({
 }: {
   searchParams: Promise<{ empresa?: string; estado?: string; q?: string }>;
 }) {
-  await requireAdmin();
+  const actor = await requireAdmin();
   const { empresa, estado, q } = await searchParams;
 
   const conditions: SQL[] = [];
@@ -86,6 +86,7 @@ export default async function PedidosPage({
   return (
     <AdminShell
       active="/admin/pedidos"
+      usuario={actor}
       title="Pedidos"
       actions={
         // Descarga de archivo servida por route handler — no es una página

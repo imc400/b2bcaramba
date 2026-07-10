@@ -1,4 +1,4 @@
-import { Building2, Package, Settings, ToyBrick, Users } from "lucide-react";
+import { Building2, LogOut, Package, Settings, ShieldCheck, ToyBrick, Users } from "lucide-react";
 import Link from "next/link";
 import { CarambaLogo } from "./brand";
 
@@ -7,6 +7,7 @@ const NAV = [
   { href: "/admin/empresas", label: "Empresas", Icon: Building2 },
   { href: "/admin/colaboradores", label: "Colaboradores", Icon: Users },
   { href: "/admin/productos", label: "Productos", Icon: ToyBrick },
+  { href: "/admin/usuarios", label: "Usuarios", Icon: ShieldCheck },
   { href: "/admin/ajustes", label: "Ajustes", Icon: Settings },
 ];
 
@@ -16,11 +17,13 @@ export function AdminShell({
   children,
   title,
   actions,
+  usuario,
 }: {
   active: string;
   title: string;
   children: React.ReactNode;
   actions?: React.ReactNode;
+  usuario?: { name: string | null; email: string };
 }) {
   return (
     <div className="flex min-h-dvh bg-caramba-crema">
@@ -57,8 +60,23 @@ export function AdminShell({
             );
           })}
         </nav>
-        <div className="border-t border-white/10 px-5 py-4">
-          <p className="text-xs text-white/40">app.caramba.cl</p>
+        <div className="space-y-2 border-t border-white/10 px-5 py-4">
+          {usuario ? (
+            <>
+              <p className="truncate text-xs font-medium text-white/70">
+                {usuario.name ?? usuario.email}
+              </p>
+              <Link
+                href="/admin/salir"
+                className="inline-flex items-center gap-1.5 text-xs text-white/45 hover:text-white"
+              >
+                <LogOut className="size-3.5" strokeWidth={1.8} />
+                Cerrar sesión
+              </Link>
+            </>
+          ) : (
+            <p className="text-xs text-white/40">app.caramba.cl</p>
+          )}
         </div>
       </aside>
       <div className="ml-56 flex-1">

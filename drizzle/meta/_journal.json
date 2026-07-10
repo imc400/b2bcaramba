@@ -22,6 +22,13 @@
       "when": 1783639158502,
       "tag": "0002_rate_limits_and_order_index",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1783642427120,
+      "tag": "0003_admin_users_and_invites",
+      "breakpoints": true
     }
   ]
 }

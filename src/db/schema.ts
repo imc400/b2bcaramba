@@ -176,6 +176,8 @@ export const collaborators = pgTable(
     rut: text("rut"),
     name: text("name"),
     quota: integer("quota").notNull().default(1),
+    // Cuándo se le envió el link de su empresa (null = todavía no se le avisó)
+    invitedAt: timestamp("invited_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
@@ -335,6 +337,60 @@ export const webhookEvents = pgTable(
     processedAt: timestamp("processed_at", { withTimezone: true }),
   },
   (t) => [index("webhook_events_received_idx").on(t.receivedAt)],
+);
+
+// ---------------------------------------------------------------------------
+// Usuarios del panel (Javiera y su equipo). Acceso por magic link: sin
+// contraseñas que filtrar, y cada acción del audit_log queda con nombre y
+// apellido en vez de un genérico "admin".
+// ---------------------------------------------------------------------------
+
+export const adminRoleEnum = pgEnum("admin_role", ["owner", "editor"]);
+
+export const adminUsers = pgTable(
+  "admin_users",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    email: text("email").notNull(),
+    name: text("name"),
+    role: adminRoleEnum("role").notNull().default("editor"),
+    active: boolean("active").notNull().default(true),
+    lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("admin_users_email_idx").on(t.email)],
+);
+
+/** Magic link de un solo uso, para invitar y para iniciar sesión. */
+export const adminMagicLinks = pgTable(
+  "admin_magic_links",
+  {
+    // sha256 del token; el token viaja solo en el correo
+    tokenHash: text("token_hash").primaryKey(),
+    adminUserId: uuid("admin_user_id")
+      .notNull()
+      .references(() => adminUsers.id, { onDelete: "cascade" }),
+    purpose: text("purpose").notNull(), // "invite" | "login"
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("admin_magic_links_user_idx").on(t.adminUserId)],
+);
+
+/** Sesión del panel, revocable (a diferencia de la cookie firmada anterior). */
+export const adminSessions = pgTable(
+  "admin_sessions",
+  {
+    tokenHash: text("token_hash").primaryKey(),
+    adminUserId: uuid("admin_user_id")
+      .notNull()
+      .references(() => adminUsers.id, { onDelete: "cascade" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("admin_sessions_user_idx").on(t.adminUserId)],
 );
 
 /**

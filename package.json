@@ -12,11 +12,14 @@
     "db:generate": "drizzle-kit generate",
     "sync": "tsx scripts/sync-shopify.ts",
     "shopify:deploy": "shopify app deploy",
-    "test": "tsx --tsconfig tsconfig.scripts.json scripts/test-bulk-parse.ts && tsx --tsconfig tsconfig.scripts.json scripts/test-campaign.ts && tsx --tsconfig tsconfig.scripts.json scripts/test-order-authz.ts",
+    "test": "tsx --tsconfig tsconfig.scripts.json scripts/test-bulk-parse.ts && tsx --tsconfig tsconfig.scripts.json scripts/test-campaign.ts && tsx --tsconfig tsconfig.scripts.json scripts/test-admin-invites.ts && tsx --tsconfig tsconfig.scripts.json scripts/test-order-authz.ts",
     "webhooks:register": "tsx --tsconfig tsconfig.scripts.json scripts/register-webhooks.ts",
     "webhooks:list": "tsx --tsconfig tsconfig.scripts.json scripts/register-webhooks.ts --list",
     "verify:shopify": "tsx --tsconfig tsconfig.scripts.json scripts/verify-shopify-sync.ts",
-    "verify:pedido": "tsx --tsconfig tsconfig.scripts.json scripts/verify-order-e2e.ts"
+    "verify:pedido": "tsx --tsconfig tsconfig.scripts.json scripts/verify-order-e2e.ts",
+    "admin:crear": "tsx --tsconfig tsconfig.scripts.json scripts/create-admin.ts",
+    "verify:email": "tsx --tsconfig tsconfig.scripts.json scripts/verify-email.ts",
+    "migrate:supabase": "tsx --tsconfig tsconfig.scripts.json scripts/migrate-supabase.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",

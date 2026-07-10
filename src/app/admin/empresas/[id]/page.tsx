@@ -26,7 +26,7 @@ export default async function EditarEmpresaPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireAdmin();
+  const actor = await requireAdmin();
   const { id } = await params;
 
   const [company] = await db.select().from(companies).where(eq(companies.id, id));
@@ -45,7 +45,7 @@ export default async function EditarEmpresaPage({
   ]);
 
   return (
-    <AdminShell active="/admin/empresas" title={`Empresas › ${company.name}`}>
+    <AdminShell active="/admin/empresas" usuario={actor} title={`Empresas › ${company.name}`}>
       <CompanyForm
         appUrl={process.env.NEXT_PUBLIC_APP_URL ?? ""}
         initial={{

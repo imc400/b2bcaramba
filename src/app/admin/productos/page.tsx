@@ -12,7 +12,7 @@ export default async function ProductosPage({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
-  await requireAdmin();
+  const actor = await requireAdmin();
   const { q } = await searchParams;
 
   const rows = await db
@@ -46,7 +46,7 @@ export default async function ProductosPage({
   });
 
   return (
-    <AdminShell active="/admin/productos" title="Productos · espejo de Shopify">
+    <AdminShell active="/admin/productos" usuario={actor} title="Productos · espejo de Shopify">
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard value={stats.total} label="productos en espejo" />
         <StatCard value={stats.active} label="activos" tone="verde" />

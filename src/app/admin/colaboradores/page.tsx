@@ -1,17 +1,19 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { Check, Clock } from "lucide-react";
 import { db } from "@/db";
 import { campaigns, collaborators, companies } from "@/db/schema";
 import { AdminShell, StatCard } from "@/components/admin-shell";
 import { requireAdmin } from "@/lib/auth/admin";
 import { formatRut } from "@/lib/auth/rut";
 import { ImportForm } from "./import-form";
+import { InviteButton } from "./invite-button";
 
 export default async function ColaboradoresPage({
   searchParams,
 }: {
   searchParams: Promise<{ campana?: string }>;
 }) {
-  await requireAdmin();
+  const actor = await requireAdmin();
   const { campana } = await searchParams;
 
   const campaignsList = await db
@@ -25,6 +27,7 @@ export default async function ColaboradoresPage({
     .orderBy(desc(campaigns.createdAt));
 
   const activeCampaignId = campana ?? campaignsList[0]?.id;
+  const campanaActiva = campaignsList.find((c) => c.id === activeCampaignId);
 
   const rows = activeCampaignId
     ? await db
@@ -42,11 +45,21 @@ export default async function ColaboradoresPage({
         .limit(500)
     : [];
 
+  const [pendientes] = activeCampaignId
+    ? await db
+        .select({
+          total: sql<number>`count(*)::int`,
+          sinCorreo: sql<number>`count(*) FILTER (WHERE email IS NULL)::int`,
+        })
+        .from(collaborators)
+        .where(and(eq(collaborators.campaignId, activeCampaignId), isNull(collaborators.invitedAt)))
+    : [{ total: 0, sinCorreo: 0 }];
+
   const totalQuota = rows.reduce((s, r) => s + r.collaborator.quota, 0);
   const totalUsed = rows.reduce((s, r) => s + r.usedQuota, 0);
 
   return (
-    <AdminShell active="/admin/colaboradores" title="Colaboradores">
+    <AdminShell active="/admin/colaboradores" title="Colaboradores" usuario={actor}>
       <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
         <div className="space-y-4">
           <ImportForm
@@ -56,6 +69,14 @@ export default async function ColaboradoresPage({
             }))}
             defaultCampaignId={activeCampaignId}
           />
+          {activeCampaignId && campanaActiva ? (
+            <InviteButton
+              campaignId={activeCampaignId}
+              campaignLabel={`${campanaActiva.companyName} · ${campanaActiva.name}`}
+              pendientes={pendientes.total}
+              pendientesSinCorreo={pendientes.sinCorreo}
+            />
+          ) : null}
           <div className="grid grid-cols-2 gap-4">
             <StatCard value={rows.length} label="colaboradores" />
             <StatCard value={`${totalUsed}/${totalQuota}`} label="regalos usados" tone="verde" />
@@ -65,9 +86,10 @@ export default async function ColaboradoresPage({
         <div className="overflow-x-auto rounded-2xl border border-caramba-grafito/8 bg-white shadow-sm">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-caramba-grafito/8 text-left text-[11px] font-bold uppercase tracking-wider text-caramba-grafito/45">
+              <tr className="border-b border-caramba-grafito/8 text-left text-[11px] font-bold uppercase tracking-wider text-caramba-grafito/60">
                 <th className="px-5 py-3.5">Correo / RUT</th>
                 <th className="px-5 py-3.5">Nombre</th>
+                <th className="px-5 py-3.5">Invitación</th>
                 <th className="px-5 py-3.5">Cupo</th>
                 <th className="px-5 py-3.5">Usado</th>
               </tr>
@@ -83,6 +105,21 @@ export default async function ColaboradoresPage({
                   </td>
                   <td className="px-5 py-3.5 text-caramba-grafito/80">{c.name ?? "—"}</td>
                   <td className="px-5 py-3.5">
+                    {c.invitedAt ? (
+                      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-caramba-verde-texto">
+                        <Check className="size-3.5" strokeWidth={2.5} />
+                        {c.invitedAt.toLocaleDateString("es-CL", { day: "2-digit", month: "short" })}
+                      </span>
+                    ) : c.email ? (
+                      <span className="inline-flex items-center gap-1.5 text-xs text-caramba-amarillo-texto">
+                        <Clock className="size-3.5" strokeWidth={2} />
+                        Pendiente
+                      </span>
+                    ) : (
+                      <span className="text-xs text-caramba-grafito/40">Sin correo</span>
+                    )}
+                  </td>
+                  <td className="px-5 py-3.5">
                     <span className="rounded-full bg-caramba-crema px-2.5 py-1 text-xs font-bold">
                       {c.quota}
                     </span>
@@ -91,7 +128,7 @@ export default async function ColaboradoresPage({
                     <span
                       className={`rounded-full px-2.5 py-1 text-xs font-bold ${
                         usedQuota >= c.quota
-                          ? "bg-caramba-verde-soft text-[#3f7a5c]"
+                          ? "bg-caramba-verde-soft text-caramba-verde-texto"
                           : "bg-caramba-crema text-caramba-grafito/60"
                       }`}
                     >
@@ -102,7 +139,7 @@ export default async function ColaboradoresPage({
               ))}
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-5 py-12 text-center text-caramba-grafito/45">
+                  <td colSpan={5} className="px-5 py-12 text-center text-caramba-grafito/45">
                     Sin colaboradores en esta campaña. Importa un Excel para partir.
                   </td>
                 </tr>

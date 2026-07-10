@@ -14,7 +14,7 @@ import {
 import { SyncButton } from "./sync-button";
 
 export default async function AjustesPage() {
-  await requireAdmin();
+  const actor = await requireAdmin();
 
   const recipients = await db
     .select({
@@ -36,7 +36,7 @@ export default async function AjustesPage() {
   });
 
   return (
-    <AdminShell active="/admin/ajustes" title="Ajustes">
+    <AdminShell active="/admin/ajustes" usuario={actor} title="Ajustes">
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Notificaciones */}
         <Card className="space-y-5 p-6">

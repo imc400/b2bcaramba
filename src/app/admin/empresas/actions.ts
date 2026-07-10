@@ -57,7 +57,7 @@ export async function upsertCompanyAction(
   _prev: UpsertCompanyState,
   formData: FormData,
 ): Promise<UpsertCompanyState> {
-  await requireAdmin();
+  const actor = await requireAdmin();
 
   const parsed = upsertSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) {
@@ -120,7 +120,7 @@ export async function upsertCompanyAction(
   }
 
   await db.insert(auditLog).values({
-    actorEmail: "admin",
+    actorEmail: actor.email,
     action: d.companyId ? "company_update" : "company_create",
     entity: "company",
     entityId: companyId,

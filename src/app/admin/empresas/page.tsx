@@ -13,7 +13,7 @@ const STATUS_BADGE: Record<string, { label: string; tone: "verde" | "amarillo" |
 };
 
 export default async function EmpresasPage() {
-  await requireAdmin();
+  const actor = await requireAdmin();
 
   const rows = await db
     .select({
@@ -36,6 +36,7 @@ export default async function EmpresasPage() {
   return (
     <AdminShell
       active="/admin/empresas"
+      usuario={actor}
       title="Empresas"
       actions={
         <Link
