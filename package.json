@@ -15,7 +15,8 @@
     "test": "tsx --tsconfig tsconfig.scripts.json scripts/test-bulk-parse.ts && tsx --tsconfig tsconfig.scripts.json scripts/test-campaign.ts && tsx --tsconfig tsconfig.scripts.json scripts/test-order-authz.ts",
     "webhooks:register": "tsx --tsconfig tsconfig.scripts.json scripts/register-webhooks.ts",
     "webhooks:list": "tsx --tsconfig tsconfig.scripts.json scripts/register-webhooks.ts --list",
-    "verify:shopify": "tsx --tsconfig tsconfig.scripts.json scripts/verify-shopify-sync.ts"
+    "verify:shopify": "tsx --tsconfig tsconfig.scripts.json scripts/verify-shopify-sync.ts",
+    "verify:pedido": "tsx --tsconfig tsconfig.scripts.json scripts/verify-order-e2e.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",
