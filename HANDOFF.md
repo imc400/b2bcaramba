@@ -12,12 +12,14 @@
 ## Verificar que todo está sano
 
 ```bash
-pnpm test            # parser JSONL, campañas/DST, autorización de pedidos
-pnpm verify:shopify  # E2E contra la tienda REAL: bodega, webhooks, CAS, espejo
-pnpm webhooks:list   # suscripciones activas
+pnpm test              # parser JSONL, campañas/DST, magic links, autorización de pedidos
+pnpm verify:shopify    # E2E contra la tienda REAL: bodega, webhooks, CAS, espejo
+pnpm verify:pedido --confirm   # pedido real → descuenta stock → anula → repone
+pnpm verify:email tu@correo.cl # ¿salen los correos de verdad?
+pnpm webhooks:list     # suscripciones activas
 ```
 
-`verify:shopify` cambia el stock de un producto +1 y lo restaura: deja la tienda exactamente como estaba.
+`verify:shopify` y `verify:pedido` mueven el stock y lo restauran: dejan la tienda exactamente como estaba.
 
 ## Reglas que no se pueden romper
 
@@ -48,22 +50,32 @@ Los webhooks corren por Inngest si `INNGEST_EVENT_KEY` está definida; si no, **
 
 ## Pendientes priorizados
 
-**P0 — antes del primer cliente real**
-1. **Resend**: crear cuenta, verificar dominio caramba.cl, poner `RESEND_API_KEY`. Hoy los correos (OTP y avisos de pedido) solo se loguean.
+**P0 — ÚNICO bloqueador para operar**
+1. **Resend**: sin `RESEND_API_KEY` los correos (código de acceso del colaborador, invitaciones, avisos de pedido) solo se escriben en los logs. **Nadie puede entrar a su microsite.** Guía: `../docs/setup-resend.md`.
+
+**P0b — cuando haya cliente real**
 2. **Dominio propio**: apuntar `app.caramba.cl` a Vercel (CNAME). El `redirect_url` ya está en `shopify.app.toml`; tras el cambio, correr `pnpm shopify:deploy` y `pnpm webhooks:register` con el nuevo `NEXT_PUBLIC_APP_URL`. **No tocar el DNS de caramba.cl** (está en Shopify).
-3. **Auth admin real**: hoy es una password compartida (con rate limit por IP). Migrar a Supabase Auth con cuentas por persona.
+3. **Quitar `ADMIN_PASSWORD`** de Vercel una vez que Resend funcione: el magic link la reemplaza y esa variable es el único acceso sin correo.
 
 **P1 — escalabilidad y robustez**
 4. **RLS en Postgres** (`company_id` + `current_setting('app.tenant_id')`) como defensa en profundidad del multi-tenant.
 5. Paginación en `/admin/pedidos` (200 filas) y `/admin/colaboradores` (500) y en el catálogo del microsite (60).
 6. Import de colaboradores: 2 queries por fila → batch + transacción.
 7. Reconciliación: un step de Inngest por producto cambiado → agrupar.
-8. Poda de `webhook_events`, `otp_codes`, `sessions`, `rate_limits` (crecen sin límite).
-9. Escapar HTML en los correos internos (nombre/dirección del colaborador se interpolan).
-10. `/api/auth/shopify/install` sin gate de admin: cualquiera puede iniciar el OAuth.
+8. Poda de `webhook_events`, `otp_codes`, `sessions`, `admin_magic_links`, `rate_limits` (crecen sin límite).
+9. `/api/auth/shopify/install` sin gate de admin: cualquiera puede iniciar el OAuth.
 
 **P2 — deuda de mantención** (ver hallazgos menores en el informe de revisión)
 Estados de pedido duplicados en 3 componentes, "cupo usado" calculado en 3 lugares, `loadOrderBundle` reimplementado en el detalle, tokens de color hardcodeados.
+
+## Acceso al panel
+
+Acceso por **magic link**: se pide desde `/admin/login` con el correo y llega un enlace de 30 min, un solo uso. Las sesiones se guardan en `admin_sessions` y se pueden revocar de verdad.
+
+- Primer usuario (una sola vez): `pnpm admin:crear javiera@caramba.cl "Javiera Fernández"` — imprime su enlace.
+- Después, el propietario invita a su equipo desde `/admin/usuarios`.
+- `ADMIN_PASSWORD` sigue existiendo como **acceso de emergencia** (entra como el propietario más antiguo). Quítala cuando Resend funcione.
+- Los **colaboradores de las empresas NO tienen cuenta aquí**: se importan por Excel y entran a su microsite con un código de 6 dígitos.
 
 ## Comandos
 
@@ -71,7 +83,11 @@ Estados de pedido duplicados en 3 componentes, "cupo usado" calculado en 3 lugar
 pnpm dev --port 3002        # 3000/3001 ocupados por otros proyectos
 pnpm seed                   # datos demo (NO usar contra producción)
 pnpm sync                   # full-sync del catálogo (--cache reusa el JSONL)
+pnpm admin:crear <correo> "<Nombre>"   # primer usuario del panel
 pnpm db:migrate             # con DIRECT_DATABASE_URL apuntando a la DB destino
+pnpm migrate:supabase       # migra producción vía Management API (Vercel ya no
+                            # deja leer sus variables sensibles, así que no
+                            # tenemos la contraseña de la DB a mano)
 pnpm shopify:deploy         # publica shopify.app.toml
 vercel deploy --prod --yes
 ```
@@ -84,3 +100,5 @@ vercel deploy --prod --yes
 - **Pool de Postgres en dev**: el cliente se cachea en `globalThis` (HMR crearía un pool por recarga). No revertir.
 - **`revalidatePath` tras crear un pedido** re-renderiza `/carrito`, cuyo redirect por cupo=0 le gana al `router.push` hacia `/listo`. Por eso no se revalida ahí.
 - **Turbopack**: si tras reiniciar aparece `Cannot find module 'drizzle-orm'`, es caché corrupta → `rm -rf .next`.
+- **Migraciones con `ALTER TYPE ... ADD VALUE`**: siempre con `IF NOT EXISTS`. Sin eso, la migración revienta en cualquier base donde el valor ya exista y **corta la cadena entera** (nos pasó: `rate_limits` no existía en local y nadie se dio cuenta).
+- **`vercel env pull` devuelve vacías las variables sensibles.** Para operar contra la DB de producción usa `pnpm migrate:supabase` (Management API) o pide la contraseña.
