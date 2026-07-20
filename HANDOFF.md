@@ -1,9 +1,9 @@
 # HANDOFF — Plataforma Caramba B2B
 
-**Estado: EN PRODUCCIÓN.** Actualizado 09-jul-2026.
+**Estado: EN PRODUCCIÓN.** Actualizado 20-jul-2026.
 
 - **App**: https://b2bcaramba.vercel.app (alias: caramba-b2b.vercel.app), región `gru1` (São Paulo)
-- **Panel**: /admin · password en `ADMIN_PASSWORD`
+- **Panel**: /admin · cada usuario entra con **correo + contraseña** (sin depender de Resend); magic link como alternativa
 - **Microsites**: /entel · /mercadolibre
 - **Repo**: github.com/imc400/b2bcaramba
 - **DB**: Supabase `ypmkejirsamzylxhwxdg` (sa-east-1)
@@ -50,8 +50,9 @@ Los webhooks corren por Inngest si `INNGEST_EVENT_KEY` está definida; si no, **
 
 ## Pendientes priorizados
 
-**P0 — ÚNICO bloqueador para operar**
-1. **Resend**: sin `RESEND_API_KEY` los correos (código de acceso del colaborador, invitaciones, avisos de pedido) solo se escriben en los logs. **Nadie puede entrar a su microsite.** Guía: `../docs/setup-resend.md`.
+**P0 — ÚNICO bloqueador para que OPEREN LOS COLABORADORES**
+1. **Resend**: sin `RESEND_API_KEY` los correos (código de acceso del colaborador, avisos de pedido) solo se escriben en los logs. **Ningún colaborador puede entrar a su microsite** (su acceso es por código al correo). Guía: `../docs/setup-resend.md`.
+   - El **panel admin ya NO depende de Resend**: Javiera y demás usuarios entran con correo + contraseña. Alta/reset de contraseña: `pnpm admin:password <correo> "<clave>"` (temporal por defecto; la persona la cambia al entrar en `/admin/cuenta`). También sirve de break-glass si un owner queda fuera.
 
 **P0b — cuando haya cliente real**
 2. **Dominio propio**: apuntar `app.caramba.cl` a Vercel (CNAME). El `redirect_url` ya está en `shopify.app.toml`; tras el cambio, correr `pnpm shopify:deploy` y `pnpm webhooks:register` con el nuevo `NEXT_PUBLIC_APP_URL`. **No tocar el DNS de caramba.cl** (está en Shopify).
@@ -84,6 +85,7 @@ pnpm dev --port 3002        # 3000/3001 ocupados por otros proyectos
 pnpm seed                   # datos demo (NO usar contra producción)
 pnpm sync                   # full-sync del catálogo (--cache reusa el JSONL)
 pnpm admin:crear <correo> "<Nombre>"   # primer usuario del panel
+pnpm admin:password <correo> "<clave>" # fija/resetea contraseña (temporal; --definitiva la deja final)
 pnpm db:migrate             # con DIRECT_DATABASE_URL apuntando a la DB destino
 pnpm migrate:supabase       # migra producción vía Management API (Vercel ya no
                             # deja leer sus variables sensibles, así que no

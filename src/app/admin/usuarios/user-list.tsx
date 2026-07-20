@@ -1,14 +1,24 @@
 "use client";
 
-import { Clock, Send, UserPlus } from "lucide-react";
+import { Clock, RefreshCw, Send, UserPlus } from "lucide-react";
 import { useActionState, useState, useTransition } from "react";
 import { Badge, Button, Card, Field, Input } from "@/components/ui";
 import { inviteAdminAction, resendInviteAction, revokeAdminAction, type InviteState } from "./actions";
 
-export function InviteForm() {
+/** Contraseña temporal legible: 3 sílabas + número. */
+function generarPassword(): string {
+  const silabas = ["ca", "ram", "ba", "lu", "na", "so", "mi", "ta", "re", "pi", "to", "ma"];
+  const pick = () => silabas[Math.floor(Math.random() * silabas.length)];
+  const num = String(Math.floor(Math.random() * 90) + 10);
+  return `${pick()}${pick()}${pick()}${num}`;
+}
+
+export function InviteForm({ resendConfigurado }: { resendConfigurado: boolean }) {
   const [state, invite, pending] = useActionState<InviteState, FormData>(inviteAdminAction, {
     status: "idle",
   });
+  const [modo, setModo] = useState<"password" | "magic">("password");
+  const [password, setPassword] = useState("");
 
   return (
     <Card className="space-y-5 p-6">
@@ -18,10 +28,32 @@ export function InviteForm() {
           Invitar al panel
         </h2>
         <p className="mt-1 text-sm text-caramba-grafito/70">
-          Le llega un correo con un enlace para activar su cuenta. No usa contraseña.
+          Crea la cuenta con una contraseña temporal que la persona cambia al entrar.
         </p>
       </div>
+
+      {/* Contraseña temporal (mostrada UNA vez tras crear) */}
+      {state.status === "ok" && state.tempPassword ? (
+        <div className="space-y-2 rounded-xl bg-caramba-verde-soft px-4 py-3">
+          <p className="text-sm font-medium text-caramba-verde-texto">{state.message}</p>
+          <div className="rounded-lg bg-white px-4 py-3">
+            <p className="text-xs text-caramba-grafito/60">{state.tempEmail}</p>
+            <p className="mt-0.5 font-mono text-lg font-semibold tracking-wide text-caramba-grafito">
+              {state.tempPassword}
+            </p>
+          </div>
+          <p className="text-xs text-caramba-grafito/60">
+            Anótala ahora: por seguridad no se vuelve a mostrar.
+          </p>
+        </div>
+      ) : state.status === "ok" ? (
+        <p className="rounded-xl bg-caramba-verde-soft px-4 py-3 text-sm font-medium text-caramba-verde-texto">
+          {state.message}
+        </p>
+      ) : null}
+
       <form action={invite} className="space-y-4">
+        <input type="hidden" name="modo" value={modo} />
         <Field label="Nombre" htmlFor="name">
           <Input id="name" name="name" placeholder="Javiera Fernández" required minLength={2} />
         </Field>
@@ -36,11 +68,7 @@ export function InviteForm() {
             required
           />
         </Field>
-        <Field
-          label="Rol"
-          htmlFor="role"
-          hint="El propietario además puede invitar y revocar personas."
-        >
+        <Field label="Rol" htmlFor="role" hint="El propietario además puede invitar y revocar personas.">
           <select
             id="role"
             name="role"
@@ -51,16 +79,53 @@ export function InviteForm() {
             <option value="owner">Propietario</option>
           </select>
         </Field>
+
+        {modo === "password" ? (
+          <Field label="Contraseña temporal" htmlFor="password" hint="Mínimo 8 caracteres, con letras y números. La persona la cambiará al entrar.">
+            <div className="flex gap-2">
+              <Input
+                id="password"
+                name="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="mínimo 8 caracteres"
+                minLength={8}
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setPassword(generarPassword())}
+                title="Generar una contraseña"
+                className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-caramba-grafito/15 px-3 text-sm font-medium text-caramba-grafito/70 hover:border-caramba-grafito/40"
+              >
+                <RefreshCw className="size-4" strokeWidth={2} />
+                Generar
+              </button>
+            </div>
+          </Field>
+        ) : null}
+
         <Button type="submit" className="w-full" disabled={pending}>
-          {pending ? "Enviando…" : "Enviar invitación"}
+          {pending
+            ? "Creando…"
+            : modo === "password"
+              ? "Crear cuenta"
+              : "Enviar invitación por correo"}
         </Button>
       </form>
 
-      {state.status === "ok" ? (
-        <p className="rounded-xl bg-caramba-verde-soft px-4 py-3 text-sm font-medium text-caramba-verde-texto">
-          {state.message}
-        </p>
+      {resendConfigurado ? (
+        <button
+          type="button"
+          onClick={() => setModo((m) => (m === "password" ? "magic" : "password"))}
+          className="min-h-11 w-full text-xs font-medium text-caramba-grafito/55 hover:text-caramba-grafito"
+        >
+          {modo === "password"
+            ? "Prefiero enviarle un enlace por correo"
+            : "← Prefiero fijar una contraseña temporal"}
+        </button>
       ) : null}
+
       {state.status === "error" ? (
         <p role="alert" className="rounded-xl bg-caramba-rojo-soft px-4 py-3 text-sm font-medium text-caramba-rojo-texto">
           {state.message}

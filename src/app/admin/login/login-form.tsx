@@ -4,9 +4,10 @@ import { MailCheck } from "lucide-react";
 import { useActionState, useState } from "react";
 import { Button, Field, Input } from "@/components/ui";
 import {
-  emergencyLoginAction,
+  passwordLoginAction,
   requestMagicLinkAction,
   type LoginState,
+  type PasswordLoginState,
 } from "./actions";
 
 function Spinner() {
@@ -18,21 +19,19 @@ function Spinner() {
   );
 }
 
-export function LoginForm({
-  errorPassword,
-  rateLimited,
-  emergenciaDisponible,
-}: {
-  errorPassword: boolean;
-  rateLimited: boolean;
-  emergenciaDisponible: boolean;
-}) {
-  const [state, request, pending] = useActionState<LoginState, FormData>(requestMagicLinkAction, {
-    status: "idle",
-  });
-  const [modoEmergencia, setModoEmergencia] = useState(errorPassword || rateLimited);
+export function LoginForm() {
+  const [modo, setModo] = useState<"password" | "magic">("password");
 
-  if (state.status === "sent") {
+  const [pwState, pwLogin, pwPending] = useActionState<PasswordLoginState, FormData>(
+    passwordLoginAction,
+    { status: "idle" },
+  );
+  const [magicState, magicRequest, magicPending] = useActionState<LoginState, FormData>(
+    requestMagicLinkAction,
+    { status: "idle" },
+  );
+
+  if (magicState.status === "sent") {
     return (
       <div className="mt-7 text-center">
         <span className="mx-auto flex size-14 items-center justify-center rounded-full bg-caramba-verde-soft">
@@ -47,38 +46,52 @@ export function LoginForm({
     );
   }
 
-  if (modoEmergencia && emergenciaDisponible) {
+  if (modo === "magic") {
     return (
-      <form action={emergencyLoginAction} className="mt-6 space-y-4">
-        <Field label="Contraseña de emergencia" htmlFor="password">
-          <Input id="password" name="password" type="password" required autoFocus />
+      <form action={magicRequest} className="mt-6 space-y-4">
+        <Field label="Tu correo" htmlFor="magic-email" hint="Te enviamos un enlace para entrar, sin contraseña.">
+          <Input
+            id="magic-email"
+            name="email"
+            type="email"
+            placeholder="javiera@caramba.cl"
+            autoComplete="email"
+            autoCapitalize="none"
+            spellCheck={false}
+            enterKeyHint="send"
+            required
+            autoFocus
+          />
         </Field>
-        {rateLimited ? (
+        {magicState.status === "rate_limited" ? (
           <p role="alert" className="rounded-xl bg-caramba-amarillo-soft px-4 py-2.5 text-sm text-caramba-amarillo-texto">
-            Demasiados intentos. Espera 15 minutos.
-          </p>
-        ) : errorPassword ? (
-          <p role="alert" className="rounded-xl bg-caramba-rojo-soft px-4 py-2.5 text-sm text-caramba-rojo-texto">
-            Contraseña incorrecta.
+            Pediste varios enlaces seguidos. Espera unos minutos.
           </p>
         ) : null}
-        <Button type="submit" className="w-full">
-          Entrar
+        <Button type="submit" className="w-full" disabled={magicPending}>
+          {magicPending ? (
+            <>
+              <Spinner />
+              Enviando
+            </>
+          ) : (
+            "Enviarme el enlace de acceso"
+          )}
         </Button>
         <button
           type="button"
-          onClick={() => setModoEmergencia(false)}
+          onClick={() => setModo("password")}
           className="min-h-11 w-full text-sm font-medium text-caramba-grafito/65 hover:text-caramba-grafito"
         >
-          ← Entrar con mi correo
+          ← Entrar con contraseña
         </button>
       </form>
     );
   }
 
   return (
-    <form action={request} className="mt-6 space-y-4">
-      <Field label="Tu correo" htmlFor="email" hint="Te enviamos un enlace para entrar, sin contraseña.">
+    <form action={pwLogin} className="mt-6 space-y-4">
+      <Field label="Correo" htmlFor="email">
         <Input
           id="email"
           name="email"
@@ -87,35 +100,45 @@ export function LoginForm({
           autoComplete="email"
           autoCapitalize="none"
           spellCheck={false}
-          enterKeyHint="send"
           required
           autoFocus
         />
       </Field>
-      {state.status === "rate_limited" ? (
+      <Field label="Contraseña" htmlFor="password">
+        <Input
+          id="password"
+          name="password"
+          type="password"
+          autoComplete="current-password"
+          required
+        />
+      </Field>
+      {pwState.status === "error" ? (
+        <p role="alert" className="rounded-xl bg-caramba-rojo-soft px-4 py-2.5 text-sm text-caramba-rojo-texto">
+          Correo o contraseña incorrectos.
+        </p>
+      ) : pwState.status === "rate_limited" ? (
         <p role="alert" className="rounded-xl bg-caramba-amarillo-soft px-4 py-2.5 text-sm text-caramba-amarillo-texto">
-          Pediste varios enlaces seguidos. Espera unos minutos.
+          Demasiados intentos. Espera 15 minutos.
         </p>
       ) : null}
-      <Button type="submit" className="w-full" disabled={pending}>
-        {pending ? (
+      <Button type="submit" className="w-full" disabled={pwPending}>
+        {pwPending ? (
           <>
             <Spinner />
-            Enviando
+            Entrando
           </>
         ) : (
-          "Enviarme el enlace de acceso"
+          "Entrar"
         )}
       </Button>
-      {emergenciaDisponible ? (
-        <button
-          type="button"
-          onClick={() => setModoEmergencia(true)}
-          className="min-h-11 w-full text-xs font-medium text-caramba-grafito/50 hover:text-caramba-grafito"
-        >
-          Usar contraseña de emergencia
-        </button>
-      ) : null}
+      <button
+        type="button"
+        onClick={() => setModo("magic")}
+        className="min-h-11 w-full text-xs font-medium text-caramba-grafito/50 hover:text-caramba-grafito"
+      >
+        ¿Olvidaste tu contraseña? Entra con un enlace por correo
+      </button>
     </form>
   );
 }

@@ -7,10 +7,10 @@ import { LoginForm } from "./login-form";
 export default async function AdminLoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; expirado?: string }>;
+  searchParams: Promise<{ expirado?: string }>;
 }) {
   if (await isAdminAuthenticated()) redirect("/admin/pedidos");
-  const { error, expirado } = await searchParams;
+  const { expirado } = await searchParams;
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-caramba-crema px-6">
@@ -32,11 +32,7 @@ export default async function AdminLoginPage({
           </p>
         ) : null}
 
-        <LoginForm
-          errorPassword={error === "1"}
-          rateLimited={error === "rate"}
-          emergenciaDisponible={Boolean(process.env.ADMIN_PASSWORD)}
-        />
+        <LoginForm />
       </Card>
     </main>
   );

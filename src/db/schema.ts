@@ -355,6 +355,10 @@ export const adminUsers = pgTable(
     name: text("name"),
     role: adminRoleEnum("role").notNull().default("editor"),
     active: boolean("active").notNull().default(true),
+    // Hash scrypt de la contraseña (null = cuenta solo por magic link)
+    passwordHash: text("password_hash"),
+    // Contraseña temporal fijada por el propietario: obliga a cambiarla al entrar
+    mustChangePassword: boolean("must_change_password").notNull().default(false),
     lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

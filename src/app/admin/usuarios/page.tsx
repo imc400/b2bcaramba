@@ -17,7 +17,7 @@ export default async function UsuariosPage() {
       <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
         <div className="space-y-4">
           {esOwner ? (
-            <InviteForm />
+            <InviteForm resendConfigurado={Boolean(process.env.RESEND_API_KEY)} />
           ) : (
             <Card className="flex items-start gap-3 p-6">
               <ShieldCheck className="mt-0.5 size-5 shrink-0 text-caramba-verde-texto" strokeWidth={1.8} />

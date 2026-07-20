@@ -5,18 +5,39 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
 import { adminUsers, auditLog } from "@/db/schema";
-import { createMagicLink, requireOwner, revokeAllSessions } from "@/lib/auth/admin";
+import {
+  createMagicLink,
+  requireOwner,
+  revokeAllSessions,
+  setAdminPassword,
+} from "@/lib/auth/admin";
+import { validatePassword } from "@/lib/auth/password";
 import { adminMagicLinkHtml, sendEmail } from "@/lib/email/send";
 
-export type InviteState = { status: "idle" | "ok" | "error"; message?: string };
+export type InviteState = {
+  status: "idle" | "ok" | "error";
+  message?: string;
+  // Cuando se crea con contraseña temporal, la devolvemos UNA vez para que el
+  // propietario se la comunique a la persona (no queda visible en ningún lado).
+  tempPassword?: string;
+  tempEmail?: string;
+};
 
 const inviteSchema = z.object({
   email: z.string().email().max(160),
   name: z.string().min(2).max(80),
   role: z.enum(["owner", "editor"]),
+  modo: z.enum(["password", "magic"]),
+  password: z.string().max(200).optional(),
 });
 
-/** Invita a una persona al panel enviándole un magic link de 72 horas. */
+/**
+ * Crea (o reactiva) un usuario del panel. Dos vías:
+ *  - "password": el propietario fija una contraseña temporal; la persona la
+ *    cambia al entrar. NO depende de Resend. Es el camino por defecto.
+ *  - "magic": se le envía un enlace por correo para que active su cuenta y
+ *    fije su propia contraseña. Necesita Resend configurado.
+ */
 export async function inviteAdminAction(
   _prev: InviteState,
   formData: FormData,
@@ -27,11 +48,18 @@ export async function inviteAdminAction(
     email: String(formData.get("email") ?? "").toLowerCase().trim(),
     name: formData.get("name"),
     role: formData.get("role"),
+    modo: formData.get("modo"),
+    password: formData.get("password") || undefined,
   });
   if (!parsed.success) {
     return { status: "error", message: "Revisa el correo, el nombre y el rol." };
   }
-  const { email, name, role } = parsed.data;
+  const { email, name, role, modo, password } = parsed.data;
+
+  if (modo === "password") {
+    const invalida = !password ? "Escribe una contraseña temporal." : validatePassword(password);
+    if (invalida) return { status: "error", message: invalida };
+  }
 
   const [existente] = await db.select().from(adminUsers).where(eq(adminUsers.email, email));
   let userId: string;
@@ -40,12 +68,29 @@ export async function inviteAdminAction(
     if (existente.active) {
       return { status: "error", message: `${email} ya tiene acceso al panel.` };
     }
-    // Reactivar a alguien a quien se le había revocado el acceso
     await db.update(adminUsers).set({ active: true, name, role }).where(eq(adminUsers.id, existente.id));
     userId = existente.id;
   } else {
     const [creado] = await db.insert(adminUsers).values({ email, name, role }).returning();
     userId = creado.id;
+  }
+
+  if (modo === "password") {
+    await setAdminPassword(userId, password!, true);
+    await db.insert(auditLog).values({
+      actorEmail: actor.email,
+      action: "admin_create_password",
+      entity: "admin_user",
+      entityId: userId,
+      meta: { email, role },
+    });
+    revalidatePath("/admin/usuarios");
+    return {
+      status: "ok",
+      message: `Cuenta creada para ${name}. Pásale esta contraseña temporal; la cambiará al entrar.`,
+      tempPassword: password,
+      tempEmail: email,
+    };
   }
 
   const token = await createMagicLink(userId, "invite");
@@ -54,7 +99,6 @@ export async function inviteAdminAction(
     subject: "Te invitaron al panel de Caramba",
     html: adminMagicLinkHtml(`${process.env.NEXT_PUBLIC_APP_URL}/admin/entrar?token=${token}`, true),
   });
-
   await db.insert(auditLog).values({
     actorEmail: actor.email,
     action: "admin_invite",
@@ -62,7 +106,6 @@ export async function inviteAdminAction(
     entityId: userId,
     meta: { email, role },
   });
-
   revalidatePath("/admin/usuarios");
   return { status: "ok", message: `Invitación enviada a ${email}.` };
 }

@@ -1,4 +1,4 @@
-import { Building2, LogOut, Package, Settings, ShieldCheck, ToyBrick, Users } from "lucide-react";
+import { Building2, LogOut, Package, Settings, ShieldCheck, ToyBrick, UserCog, Users } from "lucide-react";
 import Link from "next/link";
 import { CarambaLogo } from "./brand";
 
@@ -60,19 +60,28 @@ export function AdminShell({
             );
           })}
         </nav>
-        <div className="space-y-2 border-t border-white/10 px-5 py-4">
+        <div className="space-y-2.5 border-t border-white/10 px-5 py-4">
           {usuario ? (
             <>
-              <p className="truncate text-xs font-medium text-white/70">
+              <Link href="/admin/cuenta" className="block truncate text-xs font-medium text-white/70 hover:text-white">
                 {usuario.name ?? usuario.email}
-              </p>
-              <Link
-                href="/admin/salir"
-                className="inline-flex items-center gap-1.5 text-xs text-white/45 hover:text-white"
-              >
-                <LogOut className="size-3.5" strokeWidth={1.8} />
-                Cerrar sesión
               </Link>
+              <div className="flex items-center gap-3">
+                <Link
+                  href="/admin/cuenta"
+                  className="inline-flex items-center gap-1.5 text-xs text-white/45 hover:text-white"
+                >
+                  <UserCog className="size-3.5" strokeWidth={1.8} />
+                  Mi cuenta
+                </Link>
+                <Link
+                  href="/admin/salir"
+                  className="inline-flex items-center gap-1.5 text-xs text-white/45 hover:text-white"
+                >
+                  <LogOut className="size-3.5" strokeWidth={1.8} />
+                  Salir
+                </Link>
+              </div>
             </>
           ) : (
             <p className="text-xs text-white/40">app.caramba.cl</p>

@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { adminMagicLinks, adminSessions, adminUsers } from "@/db/schema";
+import { hashPassword, verifyPassword } from "./password";
 
 const COOKIE_NAME = "caramba_admin";
 const SESSION_HOURS = 12;
@@ -158,6 +159,88 @@ export async function revokeAllSessions(adminUserId: string): Promise<void> {
     .update(adminSessions)
     .set({ revokedAt: new Date() })
     .where(and(eq(adminSessions.adminUserId, adminUserId), isNull(adminSessions.revokedAt)));
+}
+
+// ---------------------------------------------------------------------------
+// Contraseña propia (independiente del correo/Resend)
+// ---------------------------------------------------------------------------
+
+/**
+ * Login con correo + contraseña. Devuelve el usuario si la contraseña es
+ * correcta y la cuenta está activa; null en cualquier otro caso.
+ *
+ * NO abre sesión: eso lo hace el server action, que sí tiene cookies. Así la
+ * función es testeable fuera de una request.
+ */
+export async function loginWithPassword(
+  email: string,
+  password: string,
+): Promise<AdminUser | null> {
+  const [user] = await db
+    .select()
+    .from(adminUsers)
+    .where(and(eq(adminUsers.email, email.toLowerCase().trim()), eq(adminUsers.active, true)))
+    .limit(1);
+  if (!user) {
+    // Igualamos el costo aunque el usuario no exista, para no filtrar por timing
+    // si un correo tiene cuenta o no.
+    await verifyPassword(password, `scrypt$${"00".repeat(16)}$${"00".repeat(64)}`);
+    return null;
+  }
+  if (!(await verifyPassword(password, user.passwordHash))) return null;
+  await db.update(adminUsers).set({ lastLoginAt: new Date() }).where(eq(adminUsers.id, user.id));
+  return user;
+}
+
+/** Fija (o reemplaza) la contraseña de un usuario. */
+export async function setAdminPassword(
+  adminUserId: string,
+  password: string,
+  mustChange = false,
+): Promise<void> {
+  await db
+    .update(adminUsers)
+    .set({ passwordHash: await hashPassword(password), mustChangePassword: mustChange })
+    .where(eq(adminUsers.id, adminUserId));
+}
+
+/**
+ * Cambia la contraseña del propio usuario. Exige la contraseña actual, salvo
+ * que sea el cambio forzado de una contraseña temporal (mustChangePassword).
+ */
+export async function changeOwnPassword(
+  user: AdminUser,
+  currentPassword: string,
+  newPassword: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const tienePassword = Boolean(user.passwordHash);
+  if (tienePassword && !user.mustChangePassword) {
+    if (!(await verifyPassword(currentPassword, user.passwordHash))) {
+      return { ok: false, error: "La contraseña actual no es correcta." };
+    }
+  }
+  await setAdminPassword(user.id, newPassword, false);
+  // Cerrar las demás sesiones: un cambio de contraseña invalida el resto.
+  await revokeAllSessionsExceptCurrent(user.id);
+  return { ok: true };
+}
+
+/** Revoca las sesiones del usuario salvo la actual (tras cambiar la contraseña). */
+async function revokeAllSessionsExceptCurrent(adminUserId: string): Promise<void> {
+  const store = await cookies();
+  const actual = store.get(COOKIE_NAME)?.value;
+  const actualHash = actual ? hashToken(actual) : "";
+  const abiertas = await db
+    .select({ tokenHash: adminSessions.tokenHash })
+    .from(adminSessions)
+    .where(and(eq(adminSessions.adminUserId, adminUserId), isNull(adminSessions.revokedAt)));
+  for (const s of abiertas) {
+    if (s.tokenHash === actualHash) continue;
+    await db
+      .update(adminSessions)
+      .set({ revokedAt: new Date() })
+      .where(eq(adminSessions.tokenHash, s.tokenHash));
+  }
 }
 
 // ---------------------------------------------------------------------------

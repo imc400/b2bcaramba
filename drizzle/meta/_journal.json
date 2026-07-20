@@ -29,6 +29,13 @@
       "when": 1783642427120,
       "tag": "0003_admin_users_and_invites",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784574320041,
+      "tag": "0004_admin_password",
+      "breakpoints": true
     }
   ]
 }
