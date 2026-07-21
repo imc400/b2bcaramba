@@ -1,6 +1,6 @@
 # HANDOFF — Plataforma Caramba B2B
 
-**Estado: EN PRODUCCIÓN.** Actualizado 20-jul-2026.
+**Estado: EN PRODUCCIÓN y operativa (Resend activo).** Actualizado 21-jul-2026.
 
 - **App**: https://b2bcaramba.vercel.app (alias: caramba-b2b.vercel.app), región `gru1` (São Paulo)
 - **Panel**: /admin · cada usuario entra con **correo + contraseña** (sin depender de Resend); magic link como alternativa
@@ -50,33 +50,37 @@ Los webhooks corren por Inngest si `INNGEST_EVENT_KEY` está definida; si no, **
 
 ## Pendientes priorizados
 
-**P0 — ÚNICO bloqueador para que OPEREN LOS COLABORADORES**
-1. **Resend**: sin `RESEND_API_KEY` los correos (código de acceso del colaborador, avisos de pedido) solo se escriben en los logs. **Ningún colaborador puede entrar a su microsite** (su acceso es por código al correo). Guía: `../docs/setup-resend.md`.
-   - El **panel admin ya NO depende de Resend**: Javiera y demás usuarios entran con correo + contraseña. Alta/reset de contraseña: `pnpm admin:password <correo> "<clave>"` (temporal por defecto; la persona la cambia al entrar en `/admin/cuenta`). También sirve de break-glass si un owner queda fuera.
+> Consolidado de la **auditoría multi-agente de handoff (21-jul-2026)**: 38 hallazgos verificados adversarialmente contra el código. Los P0 ya se cerraron.
 
-**P0b — cuando haya cliente real**
-2. **Dominio propio**: apuntar `app.caramba.cl` a Vercel (CNAME). El `redirect_url` ya está en `shopify.app.toml`; tras el cambio, correr `pnpm shopify:deploy` y `pnpm webhooks:register` con el nuevo `NEXT_PUBLIC_APP_URL`. **No tocar el DNS de caramba.cl** (está en Shopify).
-3. **Quitar `ADMIN_PASSWORD`** de Vercel una vez que Resend funcione: el magic link la reemplaza y esa variable es el único acceso sin correo.
+**YA RESUELTO (21-jul-2026)**
+- **Resend en producción**: dominio `caramba.cl` verificado (sa-east-1), envío 200 confirmado desde `pedidos@caramba.cl`. Los colaboradores ya reciben su código → **ya no hay bloqueador para operar**.
+- **Login admin por correo + contraseña** (no depende de Resend). `pnpm admin:password <correo> "<clave>"` para alta/reset y break-glass.
+- **Robustez de correo** (P0.1 + P1.1): el envío del OTP del colaborador y los correos de admin (magic link, invitar, reenviar) van en try/catch; un fallo de Resend ya NO rompe el login ni las acciones.
 
-**P1 — escalabilidad y robustez**
-4. **RLS en Postgres** (`company_id` + `current_setting('app.tenant_id')`) como defensa en profundidad del multi-tenant.
-5. Paginación en `/admin/pedidos` (200 filas) y `/admin/colaboradores` (500) y en el catálogo del microsite (60).
-6. Import de colaboradores: 2 queries por fila → batch + transacción.
-7. Reconciliación: un step de Inngest por producto cambiado → agrupar.
-8. Poda de `webhook_events`, `otp_codes`, `sessions`, `admin_magic_links`, `rate_limits` (crecen sin límite).
-9. `/api/auth/shopify/install` sin gate de admin: cualquiera puede iniciar el OAuth.
+**ACCIÓN INMEDIATA — confirmar/ajustar en Vercel producción**
+1. **`SHOPIFY_STOCK_ADJUST_ENABLED` debe estar en `true`** (P1.6). Es el gate que decide si un pedido descuenta stock real en Shopify (`isShopifyAdjustEnabled()`, `order-effects.ts`). Vercel oculta el valor; **confírmalo en el dashboard**. Si está en `false`, los pedidos reales NO descuentan Shopify y la reserva local se pierde en el siguiente sync (re-pedible → oversell B2B vs B2C). Validar con `pnpm verify:pedido --confirm`.
+2. **Inngest NO está configurado en prod** (P1.7 — confirmado: `INNGEST_EVENT_KEY`/`INNGEST_SIGNING_KEY` ausentes). Webhooks y efectos de pedido corren por el fallback inline (OK), pero **la reconciliación horaria y el full-sync semanal NO se ejecutan** y el botón "Sync completo" falla. El espejo es solo-display y Shopify manda por CAS (no hay oversell real), pero el stock mostrado puede derivar ante webhooks perdidos hasta un `pnpm sync` manual. Opciones: wire Inngest Cloud, o agregar **Vercel Cron** (`crons` en `vercel.json`) a rutas protegidas por `CRON_SECRET` que corran reconcile/full-sync inline.
+3. **Quitar `ADMIN_PASSWORD`** de Vercel + borrar `verifyAdminPassword`/`loginWithEmergencyPassword`/`emergencyLoginAction` (P1.5). Ya redundante y rompe la trazabilidad (entra como "owner más antiguo"); el break-glass lo cubre `pnpm admin:password` con contabilidad por usuario.
 
-**P2 — deuda de mantención** (ver hallazgos menores en el informe de revisión)
-Estados de pedido duplicados en 3 componentes, "cupo usado" calculado en 3 lugares, `loadOrderBundle` reimplementado en el detalle, tokens de color hardcodeados.
+**P1 — robustez y escalabilidad**
+- **Entregabilidad**: sin webhook de rebotes/quejas de Resend ni lista de supresión (P1.2); invitaciones masivas sin batch ni control del límite del plan (P1.3, `resend.batch.send` + correr en Inngest para no topar el timeout de la server action).
+- **Migración a `app.caramba.cl`** (P1.4): `NEXT_PUBLIC_APP_URL` se **inlinea en el build** → cambiarla en Vercel exige **redeploy** (no basta editar la var). Orden: dominio+CNAME en Vercel → fijar var → `vercel deploy --prod` → validar que un magic link y un correo de pedido salgan con el host nuevo. No tocar el DNS raíz de caramba.cl.
+- **UX admin**: anular pedido es un clic irreversible sin confirmación y toca stock real (P1.8); no hay gestión individual de colaborador — editar cupo / corregir correo / eliminar (`deleteCollaboratorAction` existe pero está muerto) (P1.9).
+- **Paginación**: catálogo del microsite trunca en 60 pero anuncia el total real (P1.10); `/admin/pedidos` (200) y `/admin/colaboradores` (500) truncan en silencio y el total de "cupo usado" se calcula sobre las filas truncadas (P1.11); falta buscador en colaboradores.
+- **Handoff/ops** (P1.12–P1.18): documentar todas las env vars obligatorias (6 no están en `.env.example`), inventario de credenciales y cómo rotarlas, backups/restore de la DB, monitoreo/alertas, estado de Inngest, y runbooks (webhook caído, crear empresa, rotar secreto).
+- **De la revisión anterior**: RLS en Postgres como defensa multi-tenant; poda de tablas que crecen sin límite (`webhook_events`, `otp_codes`, `sessions`, `admin_magic_links`, `rate_limits`); `/api/auth/shopify/install` sin gate de admin.
+
+**P2 — pulido y deuda de mantención** (18 hallazgos; los notables)
+Reply-To explícito aunque hoy From=pedidos@ ya recibe respuestas (P2.1); `shopify.app.toml` apunta al host viejo (P2.2/P2.3); `SESSION_SECRET` declarada pero sin uso (P2.6); canje de OTP sin rate-limit por IP, solo 5 intentos/código (P2.7); restock local no idempotente ante doble anulación (P2.9); `available>=1` ignora `safetyStock` en el lock (P2.11); sin error/not-found/loading boundaries (P2.12); "reenviar código" prometido en el copy pero inexistente (P2.13); carrito en campaña cerrada solo falla al confirmar (P2.14); estados vacíos faltantes; README desactualizado. Además deuda previa: estados de pedido duplicados, "cupo usado" en 3 lugares, `loadOrderBundle` reimplementado, tokens de color hardcodeados.
 
 ## Acceso al panel
 
-Acceso por **magic link**: se pide desde `/admin/login` con el correo y llega un enlace de 30 min, un solo uso. Las sesiones se guardan en `admin_sessions` y se pueden revocar de verdad.
+Acceso primario por **correo + contraseña** en `/admin/login` (no depende de Resend). Sesiones en `admin_sessions`, revocables. El **magic link** por correo queda como alternativa ("¿Olvidaste tu contraseña?").
 
-- Primer usuario (una sola vez): `pnpm admin:crear javiera@caramba.cl "Javiera Fernández"` — imprime su enlace.
-- Después, el propietario invita a su equipo desde `/admin/usuarios`.
-- `ADMIN_PASSWORD` sigue existiendo como **acceso de emergencia** (entra como el propietario más antiguo). Quítala cuando Resend funcione.
-- Los **colaboradores de las empresas NO tienen cuenta aquí**: se importan por Excel y entran a su microsite con un código de 6 dígitos.
+- Primer usuario (una sola vez): `pnpm admin:crear javiera@caramba.cl "Javiera Fernández"`, luego `pnpm admin:password javiera@caramba.cl "<temporal>"` (la cambia al entrar en `/admin/cuenta`).
+- El propietario invita a su equipo desde `/admin/usuarios` (contraseña temporal o magic link) y puede revocar.
+- `ADMIN_PASSWORD` (acceso de emergencia como el owner más antiguo) es **deuda a eliminar** — ver Acción inmediata #3. El break-glass real es `pnpm admin:password`.
+- Los **colaboradores de las empresas NO tienen cuenta aquí**: se importan por Excel y entran a su microsite con un código de 6 dígitos que les llega por correo.
 
 ## Comandos
 
