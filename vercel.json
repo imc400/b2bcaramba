@@ -1,3 +1,7 @@
 {
-  "regions": ["gru1"]
+  "regions": ["gru1"],
+  "crons": [
+    { "path": "/api/cron/reconcile", "schedule": "0 * * * *" },
+    { "path": "/api/cron/full-sync", "schedule": "0 5 * * 0" }
+  ]
 }
