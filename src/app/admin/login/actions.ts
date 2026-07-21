@@ -66,11 +66,17 @@ export async function requestMagicLinkAction(
   if (user) {
     const token = await createMagicLink(user.id, "login");
     const url = `${process.env.NEXT_PUBLIC_APP_URL}/admin/entrar?token=${token}`;
-    await sendEmail({
-      to: [user.email],
-      subject: "Tu acceso al panel de Caramba",
-      html: adminMagicLinkHtml(url, false),
-    });
+    try {
+      await sendEmail({
+        to: [user.email],
+        subject: "Tu acceso al panel de Caramba",
+        html: adminMagicLinkHtml(url, false),
+      });
+    } catch (err) {
+      // No rompemos la respuesta "sent" (anti-enumeración) por un fallo de
+      // envío; el admin además tiene el login por contraseña como vía primaria.
+      console.error("[admin magic link] envío falló:", err);
+    }
   }
   return { status: "sent" };
 }

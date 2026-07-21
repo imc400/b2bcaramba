@@ -82,11 +82,20 @@ export async function identifyAction(
     // OJO: incluso el rate limit se responde como "sent". Distinguirlo
     // revelaría que el identificador existe (enumeración por RUT).
     if (otp.ok) {
-      await sendEmail({
-        to: [collab.email],
-        subject: `${otp.code} es tu código · Regalos ${ctx.company.name}`,
-        html: otpEmailHtml(otp.code, ctx.company.name),
-      });
+      try {
+        await sendEmail({
+          to: [collab.email],
+          subject: `${otp.code} es tu código · Regalos ${ctx.company.name}`,
+          html: otpEmailHtml(otp.code, ctx.company.name),
+        });
+      } catch (err) {
+        // Un fallo de entregabilidad (Resend caído, 429, dominio, buzón
+        // inválido) NO debe romper el login: es la ÚNICA vía de acceso del
+        // colaborador. Respondemos "sent" igual (preserva el anti-enumeración)
+        // y dejamos rastro para alertar/reintentar; el colaborador puede pedir
+        // otro código.
+        console.error(`[otp ${parsed.data.slug}] envío de código falló:`, err);
+      }
     }
   }
 

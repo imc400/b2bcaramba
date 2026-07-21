@@ -94,20 +94,33 @@ export async function inviteAdminAction(
   }
 
   const token = await createMagicLink(userId, "invite");
-  await sendEmail({
-    to: [email],
-    subject: "Te invitaron al panel de Caramba",
-    html: adminMagicLinkHtml(`${process.env.NEXT_PUBLIC_APP_URL}/admin/entrar?token=${token}`, true),
-  });
+  let emailFallo = false;
+  try {
+    await sendEmail({
+      to: [email],
+      subject: "Te invitaron al panel de Caramba",
+      html: adminMagicLinkHtml(`${process.env.NEXT_PUBLIC_APP_URL}/admin/entrar?token=${token}`, true),
+    });
+  } catch (err) {
+    // La cuenta ya quedó creada; un fallo de correo no debe reportarse como si
+    // la invitación entera hubiera fallado. Se avisa y queda para "Reenviar".
+    console.error("[admin invite] envío falló:", err);
+    emailFallo = true;
+  }
   await db.insert(auditLog).values({
     actorEmail: actor.email,
     action: "admin_invite",
     entity: "admin_user",
     entityId: userId,
-    meta: { email, role },
+    meta: { email, role, emailFallo },
   });
   revalidatePath("/admin/usuarios");
-  return { status: "ok", message: `Invitación enviada a ${email}.` };
+  return {
+    status: "ok",
+    message: emailFallo
+      ? `Cuenta creada para ${name}, pero el correo no salió. Usa "Reenviar" en la lista.`
+      : `Invitación enviada a ${email}.`,
+  };
 }
 
 /** Revoca el acceso: desactiva la cuenta y cierra todas sus sesiones abiertas. */
@@ -142,10 +155,15 @@ export async function resendInviteAction(adminUserId: string): Promise<void> {
   if (!user || !user.active) return;
 
   const token = await createMagicLink(user.id, "invite");
-  await sendEmail({
-    to: [user.email],
-    subject: "Te invitaron al panel de Caramba",
-    html: adminMagicLinkHtml(`${process.env.NEXT_PUBLIC_APP_URL}/admin/entrar?token=${token}`, true),
-  });
+  try {
+    await sendEmail({
+      to: [user.email],
+      subject: "Te invitaron al panel de Caramba",
+      html: adminMagicLinkHtml(`${process.env.NEXT_PUBLIC_APP_URL}/admin/entrar?token=${token}`, true),
+    });
+  } catch (err) {
+    // No romper la acción por un fallo de envío (la UI marca "Reenviada").
+    console.error("[admin invite resend] envío falló:", err);
+  }
   revalidatePath("/admin/usuarios");
 }
