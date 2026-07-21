@@ -43,10 +43,10 @@ pnpm webhooks:list     # suscripciones activas
 | Capa | Mecanismo | Cuándo |
 |---|---|---|
 | Tiempo real | 7 webhooks → `/api/webhooks/shopify` | ~4s |
-| Reparación | reconciliación incremental por `updated_at` (repara stock también) | cada hora |
-| Red de seguridad | `pnpm sync` / full-sync por Bulk Operations | semanal o a mano |
+| Reparación | reconciliación incremental por `updated_at` (repara stock también) | cada hora (Vercel Cron `/api/cron/reconcile`) |
+| Red de seguridad | full-sync por Bulk Operations, o `pnpm sync` a mano | semanal (Vercel Cron `/api/cron/full-sync`) |
 
-Los webhooks corren por Inngest si `INNGEST_EVENT_KEY` está definida; si no, **inline** (mismo código, `src/lib/shopify/webhook-processor.ts`). Igual con los efectos de pedido (`src/lib/order-effects.ts`).
+Los webhooks corren por Inngest si `INNGEST_EVENT_KEY` está definida; si no, **inline** (mismo código, `src/lib/shopify/webhook-processor.ts`). Igual con los efectos de pedido (`src/lib/order-effects.ts`). Las capas 2-3 corren por Inngest si está conectado, o por **Vercel Cron** (núcleo compartido en `src/lib/shopify/reconcile.ts`); en prod hoy es Vercel Cron (Inngest no está wired).
 
 ## Pendientes priorizados
 
@@ -57,9 +57,9 @@ Los webhooks corren por Inngest si `INNGEST_EVENT_KEY` está definida; si no, **
 - **Login admin por correo + contraseña** (no depende de Resend). `pnpm admin:password <correo> "<clave>"` para alta/reset y break-glass.
 - **Robustez de correo** (P0.1 + P1.1): el envío del OTP del colaborador y los correos de admin (magic link, invitar, reenviar) van en try/catch; un fallo de Resend ya NO rompe el login ni las acciones.
 
-**ACCIÓN INMEDIATA — confirmar/ajustar en Vercel producción**
-1. **`SHOPIFY_STOCK_ADJUST_ENABLED` debe estar en `true`** (P1.6). Es el gate que decide si un pedido descuenta stock real en Shopify (`isShopifyAdjustEnabled()`, `order-effects.ts`). Vercel oculta el valor; **confírmalo en el dashboard**. Si está en `false`, los pedidos reales NO descuentan Shopify y la reserva local se pierde en el siguiente sync (re-pedible → oversell B2B vs B2C). Validar con `pnpm verify:pedido --confirm`.
-2. **Inngest NO está configurado en prod** (P1.7 — confirmado: `INNGEST_EVENT_KEY`/`INNGEST_SIGNING_KEY` ausentes). Webhooks y efectos de pedido corren por el fallback inline (OK), pero **la reconciliación horaria y el full-sync semanal NO se ejecutan** y el botón "Sync completo" falla. El espejo es solo-display y Shopify manda por CAS (no hay oversell real), pero el stock mostrado puede derivar ante webhooks perdidos hasta un `pnpm sync` manual. Opciones: wire Inngest Cloud, o agregar **Vercel Cron** (`crons` en `vercel.json`) a rutas protegidas por `CRON_SECRET` que corran reconcile/full-sync inline.
+**ACCIÓN INMEDIATA**
+1. ✅ **`SHOPIFY_STOCK_ADJUST_ENABLED=true`** fijado en Vercel prod (21-jul) → los pedidos reales descuentan stock en Shopify (bodega La Forja) y reponen al anular. Validable con `pnpm verify:pedido --confirm`. (Pendiente opcional: fail-fast si `NODE_ENV=production` y el gate != 'true', para no degradar en silencio.)
+2. ✅ **Reparación del espejo por Vercel Cron** (21-jul, P1.7 cerrado). Inngest NO está en prod (`INNGEST_EVENT_KEY`/`SIGNING_KEY` ausentes); webhooks y efectos de pedido corren por el fallback inline. Las capas 2 y 3 ahora corren por Vercel Cron: `/api/cron/reconcile` (horario) y `/api/cron/full-sync` (semanal, domingo 05:00 UTC), protegidos por `CRON_SECRET` (Bearer que Vercel adjunta). Núcleo de reconciliación compartido en `src/lib/shopify/reconcile.ts`. **Requiere Vercel Pro** (crons horarios + maxDuration 300). Verificar en el dashboard (Settings → Cron Jobs) que aparecen y que la primera corrida horaria queda OK. El botón "Sync completo" del panel sigue dependiendo de Inngest (sin efecto sin Inngest); usar el cron semanal o `pnpm sync`.
 3. **Quitar `ADMIN_PASSWORD`** de Vercel + borrar `verifyAdminPassword`/`loginWithEmergencyPassword`/`emergencyLoginAction` (P1.5). Ya redundante y rompe la trazabilidad (entra como "owner más antiguo"); el break-glass lo cubre `pnpm admin:password` con contabilidad por usuario.
 
 **P1 — robustez y escalabilidad**
