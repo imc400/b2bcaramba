@@ -59,8 +59,10 @@ export default async function AccessPage({
         </div>
       </section>
 
-      {/* Acceso */}
-      <section className="mx-auto -mt-8 mb-20 max-w-md">
+      {/* Acceso. `relative z-10`: la tarjeta se solapa con el banner (-mt-8) y
+          el banner es position:relative — sin esto, el banner pinta ENCIMA y
+          se come el padding superior de la tarjeta. */}
+      <section className="relative z-10 mx-auto -mt-8 mb-20 max-w-md">
         <AccessForm slug={slug} companyName={ctx.company.name} />
         <div className="mt-10 flex items-center justify-center gap-6 opacity-60">
           <ToyIcon name="drum" className="size-9" />
