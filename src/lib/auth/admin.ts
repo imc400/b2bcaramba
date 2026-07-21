@@ -125,10 +125,20 @@ export async function isAdminAuthenticated(): Promise<boolean> {
   return (await getAdminUser()) !== null;
 }
 
-/** Guard para páginas del panel. Devuelve el usuario para el audit log. */
-export async function requireAdmin(): Promise<AdminUser> {
+/**
+ * Guard para páginas del panel. Devuelve el usuario para el audit log.
+ * Con contraseña temporal pendiente, fuerza el paso por /admin/cuenta: sin
+ * esto, el "cambio forzado" sería solo una sugerencia de UI (bastaría teclear
+ * /admin/pedidos). Solo la página de cuenta pasa `permitirCambioPendiente`.
+ */
+export async function requireAdmin(opts?: {
+  permitirCambioPendiente?: boolean;
+}): Promise<AdminUser> {
   const user = await getAdminUser();
   if (!user) redirect("/admin/login");
+  if (user.mustChangePassword && !opts?.permitirCambioPendiente) {
+    redirect("/admin/cuenta?forzar=1");
+  }
   return user;
 }
 

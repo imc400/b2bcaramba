@@ -1,7 +1,7 @@
 "use client";
 
 import { MailCheck } from "lucide-react";
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { Button, Field, Input } from "@/components/ui";
 import { requestMagicLinkAction, type LoginState } from "./actions";
 
@@ -14,9 +14,17 @@ function Spinner() {
   );
 }
 
-export function LoginForm({ error }: { error?: "cred" | "rate" }) {
+export function LoginForm({ error, next }: { error?: "cred" | "rate"; next?: string }) {
   const [modo, setModo] = useState<"password" | "magic">("password");
   const [entrando, setEntrando] = useState(false);
+
+  // Si el navegador restaura la página desde bfcache (botón Atrás), el estado
+  // "entrando" quedaría pegado con el botón deshabilitado.
+  useEffect(() => {
+    const reset = () => setEntrando(false);
+    window.addEventListener("pageshow", reset);
+    return () => window.removeEventListener("pageshow", reset);
+  }, []);
 
   const [magicState, magicRequest, magicPending] = useActionState<LoginState, FormData>(
     requestMagicLinkAction,
@@ -91,6 +99,7 @@ export function LoginForm({ error }: { error?: "cred" | "rate" }) {
       className="mt-6 space-y-4"
       onSubmit={() => setEntrando(true)}
     >
+      {next ? <input type="hidden" name="next" value={next} /> : null}
       <Field label="Correo" htmlFor="email">
         <Input
           id="email"

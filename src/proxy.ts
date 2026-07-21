@@ -17,7 +17,14 @@ export function proxy(request: NextRequest) {
   if (PUBLIC_ADMIN_PATHS.has(pathname)) return NextResponse.next();
 
   if (!request.cookies.has(ADMIN_COOKIE)) {
-    return NextResponse.redirect(new URL("/admin/login", request.nextUrl.origin));
+    const login = new URL("/admin/login", request.nextUrl.origin);
+    // Deep-link: recordar a dónde iba (solo GETs; un POST no se puede reponer).
+    if (request.method === "GET" && pathname !== "/admin" && pathname !== "/admin/pedidos") {
+      login.searchParams.set("next", pathname + request.nextUrl.search);
+    }
+    // 303 SIEMPRE: el default (307) preserva el método y re-POSTearía un form
+    // o un Server Action con sesión vencida contra la página de login.
+    return NextResponse.redirect(login, 303);
   }
   return NextResponse.next();
 }

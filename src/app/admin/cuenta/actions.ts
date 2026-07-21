@@ -10,7 +10,7 @@ export async function changePasswordAction(
   _prev: ChangePasswordState,
   formData: FormData,
 ): Promise<ChangePasswordState> {
-  const user = await requireAdmin();
+  const user = await requireAdmin({ permitirCambioPendiente: true });
 
   const current = String(formData.get("current") ?? "");
   const next = String(formData.get("next") ?? "");

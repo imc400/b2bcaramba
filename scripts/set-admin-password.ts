@@ -32,7 +32,7 @@ async function main() {
   const { db } = await import("../src/db");
   const { adminUsers } = await import("../src/db/schema");
   const { eq } = await import("drizzle-orm");
-  const { setAdminPassword } = await import("../src/lib/auth/admin");
+  const { revokeAllSessions, setAdminPassword } = await import("../src/lib/auth/admin");
 
   const correo = email.toLowerCase().trim();
   const [user] = await db.select().from(adminUsers).where(eq(adminUsers.email, correo));
@@ -43,7 +43,11 @@ async function main() {
   }
 
   await setAdminPassword(user.id, password, !definitiva);
+  // Break-glass de verdad: al resetear, las sesiones abiertas (incluida la de
+  // un eventual intruso) quedan revocadas al instante.
+  await revokeAllSessions(user.id);
   console.log(`✓ Contraseña ${definitiva ? "definitiva" : "temporal"} fijada para ${correo}`);
+  console.log("  Todas sus sesiones abiertas fueron cerradas.");
   console.log(`  Entra en /admin/login con ese correo y contraseña.`);
   if (!definitiva) console.log("  Se le pedirá cambiarla en el primer ingreso.");
   process.exit(0);

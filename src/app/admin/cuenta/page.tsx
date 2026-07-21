@@ -8,7 +8,7 @@ export default async function CuentaPage({
 }: {
   searchParams: Promise<{ forzar?: string }>;
 }) {
-  const actor = await requireAdmin();
+  const actor = await requireAdmin({ permitirCambioPendiente: true });
   const { forzar } = await searchParams;
   const forzado = forzar === "1" || actor.mustChangePassword;
 

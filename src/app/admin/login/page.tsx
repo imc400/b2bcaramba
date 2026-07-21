@@ -7,11 +7,13 @@ import { LoginForm } from "./login-form";
 export default async function AdminLoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ expirado?: string; error?: string }>;
+  searchParams: Promise<{ expirado?: string; error?: string; next?: string }>;
 }) {
   if (await isAdminAuthenticated()) redirect("/admin/pedidos");
-  const { expirado, error } = await searchParams;
+  const { expirado, error, next } = await searchParams;
   const errorTipo = error === "cred" || error === "rate" ? error : undefined;
+  // Deep-link que el proxy recordó; el route handler lo re-valida igual.
+  const destino = next?.startsWith("/admin/") ? next : undefined;
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-caramba-crema px-6">
@@ -33,7 +35,7 @@ export default async function AdminLoginPage({
           </p>
         ) : null}
 
-        <LoginForm error={errorTipo} />
+        <LoginForm error={errorTipo} next={destino} />
       </Card>
     </main>
   );
