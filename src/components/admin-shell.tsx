@@ -74,13 +74,17 @@ export function AdminShell({
                   <UserCog className="size-3.5" strokeWidth={1.8} />
                   Mi cuenta
                 </Link>
-                <Link
-                  href="/admin/salir"
-                  className="inline-flex items-center gap-1.5 text-xs text-white/45 hover:text-white"
-                >
-                  <LogOut className="size-3.5" strokeWidth={1.8} />
-                  Salir
-                </Link>
+                {/* POST a propósito: un <Link> a /admin/salir se prefetchea y
+                    revocaría la sesión al cargar el panel. */}
+                <form action="/admin/salir" method="POST">
+                  <button
+                    type="submit"
+                    className="inline-flex items-center gap-1.5 text-xs text-white/45 hover:text-white"
+                  >
+                    <LogOut className="size-3.5" strokeWidth={1.8} />
+                    Salir
+                  </button>
+                </form>
               </div>
             </>
           ) : (

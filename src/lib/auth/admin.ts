@@ -1,13 +1,13 @@
 import "server-only";
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { adminMagicLinks, adminSessions, adminUsers } from "@/db/schema";
+import { ADMIN_COOKIE as COOKIE_NAME } from "./cookie-names";
 import { hashPassword, verifyPassword } from "./password";
 
-const COOKIE_NAME = "caramba_admin";
 const SESSION_HOURS = 12;
 const MAGIC_LINK_MINUTES = 30;
 const INVITE_HOURS = 72;
@@ -243,31 +243,6 @@ async function revokeAllSessionsExceptCurrent(adminUserId: string): Promise<void
   }
 }
 
-// ---------------------------------------------------------------------------
-// Acceso de emergencia
-// ---------------------------------------------------------------------------
-
-/**
- * Password de respaldo (ADMIN_PASSWORD). Existe solo para no quedar fuera del
- * panel si el correo falla: entra como el usuario `owner` más antiguo.
- * Si la variable no está definida, este camino no existe.
- */
-export function verifyAdminPassword(password: string): boolean {
-  const expected = process.env.ADMIN_PASSWORD;
-  if (!expected) return false;
-  const a = Buffer.from(password);
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-
-export async function loginWithEmergencyPassword(): Promise<boolean> {
-  const [owner] = await db
-    .select()
-    .from(adminUsers)
-    .where(and(eq(adminUsers.role, "owner"), eq(adminUsers.active, true)))
-    .orderBy(adminUsers.createdAt)
-    .limit(1);
-  if (!owner) return false;
-  await createAdminSession(owner.id);
-  return true;
-}
+// El acceso de emergencia por ADMIN_PASSWORD (secreto compartido que entraba
+// como el owner más antiguo) se eliminó: el break-glass sin correo es
+// `pnpm admin:password <correo> "<clave>"`, que preserva la trazabilidad.

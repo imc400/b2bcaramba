@@ -32,6 +32,15 @@ async function main() {
   const [collab] = await db.execute<{ id: string; campaign_id: string; company_id: string }>(sql`
     SELECT id, campaign_id, company_id FROM collaborators WHERE email = 'r.fuentes@entel.cl'`);
 
+  // Idempotencia: los pedidos de corridas anteriores consumen el cupo (3) del
+  // colaborador de prueba; a la tercera corrida el caso "válido" fallaría con
+  // cupo_excedido. Se eliminan antes de partir.
+  await db.execute(sql`
+    DELETE FROM order_items WHERE order_id IN (
+      SELECT id FROM orders WHERE collaborator_id = ${collab.id} AND recipient_name = 'Test Authz')`);
+  await db.execute(sql`
+    DELETE FROM orders WHERE collaborator_id = ${collab.id} AND recipient_name = 'Test Authz'`);
+
   const { createOrder } = await import("../src/lib/orders");
   const base = {
     collaboratorId: collab.id, campaignId: collab.campaign_id, companyId: collab.company_id,
