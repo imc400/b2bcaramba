@@ -6,39 +6,18 @@ import { z } from "zod";
 import { db } from "@/db";
 import { adminUsers } from "@/db/schema";
 import {
-  createAdminSession,
   createMagicLink,
   loginWithEmergencyPassword,
-  loginWithPassword,
   verifyAdminPassword,
 } from "@/lib/auth/admin";
 import { adminMagicLinkHtml, sendEmail } from "@/lib/email/send";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 export type LoginState = { status: "idle" | "sent" | "rate_limited" };
-export type PasswordLoginState = { status: "idle" | "error" | "rate_limited" };
 
-/**
- * Login con correo + contraseña. Es el camino que NO depende de Resend:
- * Javiera fija su contraseña una vez y entra siempre con ella.
- */
-export async function passwordLoginAction(
-  _prev: PasswordLoginState,
-  formData: FormData,
-): Promise<PasswordLoginState> {
-  const ip = await getClientIp();
-  const { allowed } = await checkRateLimit(`admin_login:${ip}`, 10, 15 * 60);
-  if (!allowed) return { status: "rate_limited" };
-
-  const email = String(formData.get("email") ?? "");
-  const password = String(formData.get("password") ?? "");
-  const user = await loginWithPassword(email, password);
-  if (!user) return { status: "error" };
-
-  await createAdminSession(user.id);
-  // Si entró con una contraseña temporal, primero la cambia.
-  redirect(user.mustChangePassword ? "/admin/cuenta?forzar=1" : "/admin/pedidos");
-}
+// El login con correo + contraseña vive en el Route Handler
+// `POST /api/admin/login` (no en un Server Action): setear la cookie + redirect
+// en un action emite un 303 que el router aborta y descarta el Set-Cookie.
 
 /**
  * Pide un magic link. Igual que en el microsite, la respuesta es idéntica

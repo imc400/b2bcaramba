@@ -7,10 +7,11 @@ import { LoginForm } from "./login-form";
 export default async function AdminLoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ expirado?: string }>;
+  searchParams: Promise<{ expirado?: string; error?: string }>;
 }) {
   if (await isAdminAuthenticated()) redirect("/admin/pedidos");
-  const { expirado } = await searchParams;
+  const { expirado, error } = await searchParams;
+  const errorTipo = error === "cred" || error === "rate" ? error : undefined;
 
   return (
     <main className="flex min-h-dvh items-center justify-center bg-caramba-crema px-6">
@@ -32,7 +33,7 @@ export default async function AdminLoginPage({
           </p>
         ) : null}
 
-        <LoginForm />
+        <LoginForm error={errorTipo} />
       </Card>
     </main>
   );

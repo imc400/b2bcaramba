@@ -3,12 +3,7 @@
 import { MailCheck } from "lucide-react";
 import { useActionState, useState } from "react";
 import { Button, Field, Input } from "@/components/ui";
-import {
-  passwordLoginAction,
-  requestMagicLinkAction,
-  type LoginState,
-  type PasswordLoginState,
-} from "./actions";
+import { requestMagicLinkAction, type LoginState } from "./actions";
 
 function Spinner() {
   return (
@@ -19,13 +14,10 @@ function Spinner() {
   );
 }
 
-export function LoginForm() {
+export function LoginForm({ error }: { error?: "cred" | "rate" }) {
   const [modo, setModo] = useState<"password" | "magic">("password");
+  const [entrando, setEntrando] = useState(false);
 
-  const [pwState, pwLogin, pwPending] = useActionState<PasswordLoginState, FormData>(
-    passwordLoginAction,
-    { status: "idle" },
-  );
   const [magicState, magicRequest, magicPending] = useActionState<LoginState, FormData>(
     requestMagicLinkAction,
     { status: "idle" },
@@ -89,8 +81,16 @@ export function LoginForm() {
     );
   }
 
+  // Modo contraseña: form nativo hacia el Route Handler (POST /api/admin/login).
+  // No es un Server Action a propósito: setear la cookie + redirect en un action
+  // emite un 303 que el router aborta y el navegador descarta el Set-Cookie.
   return (
-    <form action={pwLogin} className="mt-6 space-y-4">
+    <form
+      method="POST"
+      action="/api/admin/login"
+      className="mt-6 space-y-4"
+      onSubmit={() => setEntrando(true)}
+    >
       <Field label="Correo" htmlFor="email">
         <Input
           id="email"
@@ -105,25 +105,19 @@ export function LoginForm() {
         />
       </Field>
       <Field label="Contraseña" htmlFor="password">
-        <Input
-          id="password"
-          name="password"
-          type="password"
-          autoComplete="current-password"
-          required
-        />
+        <Input id="password" name="password" type="password" autoComplete="current-password" required />
       </Field>
-      {pwState.status === "error" ? (
+      {error === "cred" ? (
         <p role="alert" className="rounded-xl bg-caramba-rojo-soft px-4 py-2.5 text-sm text-caramba-rojo-texto">
           Correo o contraseña incorrectos.
         </p>
-      ) : pwState.status === "rate_limited" ? (
+      ) : error === "rate" ? (
         <p role="alert" className="rounded-xl bg-caramba-amarillo-soft px-4 py-2.5 text-sm text-caramba-amarillo-texto">
           Demasiados intentos. Espera 15 minutos.
         </p>
       ) : null}
-      <Button type="submit" className="w-full" disabled={pwPending}>
-        {pwPending ? (
+      <Button type="submit" className="w-full" disabled={entrando}>
+        {entrando ? (
           <>
             <Spinner />
             Entrando
