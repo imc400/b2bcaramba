@@ -60,7 +60,14 @@ Los webhooks corren por Inngest si `INNGEST_EVENT_KEY` está definida; si no, **
 **ACCIÓN INMEDIATA**
 1. ✅ **`SHOPIFY_STOCK_ADJUST_ENABLED=true`** fijado en Vercel prod (21-jul) → los pedidos reales descuentan stock en Shopify (bodega La Forja) y reponen al anular. Validable con `pnpm verify:pedido --confirm`. (Pendiente opcional: fail-fast si `NODE_ENV=production` y el gate != 'true', para no degradar en silencio.)
 2. ✅ **Reparación del espejo por Vercel Cron** (21-jul, P1.7 cerrado). Inngest NO está en prod (`INNGEST_EVENT_KEY`/`SIGNING_KEY` ausentes); webhooks y efectos de pedido corren por el fallback inline. Las capas 2 y 3 ahora corren por Vercel Cron: `/api/cron/reconcile` (horario) y `/api/cron/full-sync` (semanal, domingo 05:00 UTC), protegidos por `CRON_SECRET` (Bearer que Vercel adjunta). Núcleo de reconciliación compartido en `src/lib/shopify/reconcile.ts`. **Requiere Vercel Pro** (crons horarios + maxDuration 300). Verificar en el dashboard (Settings → Cron Jobs) que aparecen y que la primera corrida horaria queda OK. El botón "Sync completo" del panel sigue dependiendo de Inngest (sin efecto sin Inngest); usar el cron semanal o `pnpm sync`.
-3. **Quitar `ADMIN_PASSWORD`** de Vercel + borrar `verifyAdminPassword`/`loginWithEmergencyPassword`/`emergencyLoginAction` (P1.5). Ya redundante y rompe la trazabilidad (entra como "owner más antiguo"); el break-glass lo cubre `pnpm admin:password` con contabilidad por usuario.
+3. ✅ **`ADMIN_PASSWORD` eliminado** (21-jul, P1.5): código borrado y variable removida de Vercel. El break-glass es `pnpm admin:password <correo> "<clave>"` (además ahora revoca todas las sesiones abiertas del usuario al resetear).
+
+**REGLAS DE AUTH APRENDIDAS A LA MALA (21-jul) — no romperlas**
+- **Un GET jamás muta estado.** El logout era un GET linkeado en el sidebar y el PREFETCH de Next lo disparaba al cargar el panel → revocaba la sesión en <1s ("entro y me devuelve al login"). Logout es POST-only (`/admin/salir`, `/[slug]/salir`); los GET quedaron inofensivos.
+- **Para setear cookie + redirigir, usar Route Handler, no Server Action.** `redirect()` en un action emite un 303 que el router aborta y el navegador descarta el Set-Cookie. Por eso el login vive en `POST /api/admin/login`.
+- **`/admin/entrar` es interstitial**: el GET muestra un botón y el POST canjea. Los escáneres de correo corporativo (Safe Links/Proofpoint/Gmail) hacen GET a los links y quemarían el magic link de un solo uso.
+- **`src/proxy.ts`** (middleware de Next 16) exige cookie para todo `/admin/*` (salvo login/entrar), redirige con **303 explícito** (el default 307 re-POSTea) y conserva el deep-link en `?next=`.
+- **`requireAdmin()` fuerza el cambio de contraseña temporal** (`mustChangePassword`); solo `/admin/cuenta` pasa `permitirCambioPendiente`.
 
 **P1 — robustez y escalabilidad**
 - **Entregabilidad**: sin webhook de rebotes/quejas de Resend ni lista de supresión (P1.2); invitaciones masivas sin batch ni control del límite del plan (P1.3, `resend.batch.send` + correr en Inngest para no topar el timeout de la server action).
