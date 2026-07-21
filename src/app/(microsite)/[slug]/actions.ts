@@ -9,9 +9,11 @@ import { createOtp, verifyOtp } from "@/lib/auth/otp";
 import { normalizeRut } from "@/lib/auth/rut";
 import { createSession, getMicrositeSession } from "@/lib/auth/session";
 import { isCampaignOpen } from "@/lib/campaign";
+import { getCampaignProductDetail, type CatalogProductDetail } from "@/lib/catalog";
 import { getRemainingQuota, createOrder } from "@/lib/orders";
 import { otpEmailHtml, sendEmail } from "@/lib/email/send";
 import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
+import { sanitizeProductHtml } from "@/lib/sanitize-html";
 
 /** Campaña ABIERTA de un slug (empresa): status + ventana de fechas. */
 async function activeCampaignBySlug(slug: string) {
@@ -234,4 +236,37 @@ export async function remainingQuotaAction(): Promise<number> {
   const session = await getMicrositeSession();
   if (!session) return 0;
   return getRemainingQuota(session.collaborator.id);
+}
+
+// ---------------------------------------------------------------------------
+// Detalle de producto (popup): imágenes + descripción espejadas de Shopify
+// ---------------------------------------------------------------------------
+
+export type ProductDetailResult =
+  | { ok: true; detail: CatalogProductDetail }
+  | { ok: false };
+
+/**
+ * Detalle para el modal de la tienda. Exige sesión de colaborador y autoriza
+ * contra el filtro de SU campaña (un productId manipulado devuelve ok:false,
+ * no filtra nada). La descripción sale sanitizada; el precio nunca sale.
+ */
+export async function productDetailAction(productId: number): Promise<ProductDetailResult> {
+  const parsed = z.number().int().positive().safeParse(productId);
+  if (!parsed.success) return { ok: false };
+
+  const session = await getMicrositeSession();
+  if (!session) return { ok: false };
+
+  const detail = await getCampaignProductDetail({
+    filter: session.campaign.catalogFilter,
+    safetyStock: session.campaign.safetyStock,
+    productId: parsed.data,
+  });
+  if (!detail) return { ok: false };
+
+  return {
+    ok: true,
+    detail: { ...detail, descriptionHtml: sanitizeProductHtml(detail.descriptionHtml) },
+  };
 }

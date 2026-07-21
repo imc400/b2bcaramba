@@ -188,6 +188,57 @@ export async function getCampaignCatalog(opts: {
   return { items, total, facets: await getFacets(base) };
 }
 
+export type CatalogProductDetail = {
+  shopifyId: number;
+  title: string;
+  vendor: string | null;
+  productType: string | null;
+  tags: string[];
+  /** Galería completa espejada de Shopify, en su orden */
+  images: { url: string; altText: string | null }[];
+  /** HTML de Shopify SIN sanitizar: el caller lo pasa por sanitizeProductHtml */
+  descriptionHtml: string | null;
+};
+
+/**
+ * Detalle de UN producto, con la misma autorización que el catálogo: si el
+ * producto no pertenece al filtro de la campaña (o no tiene stock visible),
+ * devuelve null — un productId manipulado no revela nada. Nunca expone precio.
+ */
+export async function getCampaignProductDetail(opts: {
+  filter: CatalogFilter;
+  safetyStock: number;
+  productId: number;
+}): Promise<CatalogProductDetail | null> {
+  const [row] = await db
+    .selectDistinctOn([products.shopifyId], {
+      shopifyId: products.shopifyId,
+      title: products.title,
+      vendor: products.vendor,
+      productType: products.productType,
+      tags: products.tags,
+      images: products.images,
+      descriptionHtml: products.descriptionHtml,
+    })
+    .from(products)
+    .innerJoin(variants, eq(variants.productId, products.shopifyId))
+    .innerJoin(inventoryLevels, eq(inventoryLevels.inventoryItemId, variants.inventoryItemId))
+    .where(
+      and(
+        eq(products.shopifyId, opts.productId),
+        ...hardConditions(opts.safetyStock),
+        ...campaignConditions(opts.filter),
+      )!,
+    )
+    .limit(1);
+
+  if (!row) return null;
+  return {
+    ...row,
+    images: (row.images ?? []).map((i) => ({ url: i.url, altText: i.altText })),
+  };
+}
+
 /**
  * Facets calculadas en SQL sobre el catálogo base (sin los filtros que el
  * colaborador ya eligió), para que los chips no desaparezcan al usarlos.

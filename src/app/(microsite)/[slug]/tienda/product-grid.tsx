@@ -7,6 +7,7 @@ import { softTone } from "@/components/brand";
 import { Button } from "@/components/ui";
 import type { CatalogProduct } from "@/lib/catalog";
 import { useSelection, type SelectedItem } from "../selection";
+import { ProductDetailModal } from "./product-detail-modal";
 
 const AGE_TAG = /^\d+-\d+\s+(años|meses)$/i;
 
@@ -28,16 +29,31 @@ function CheckIcon({ className }: { className?: string }) {
 }
 
 export function ProductGrid({ items }: { items: CatalogProduct[] }) {
+  const [detalle, setDetalle] = useState<CatalogProduct | null>(null);
   return (
     <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
       {items.map((p, i) => (
-        <ProductCard key={p.shopifyId} product={p} index={i} />
+        <ProductCard
+          key={p.shopifyId}
+          product={p}
+          index={i}
+          onOpenDetail={() => setDetalle(p)}
+        />
       ))}
+      {detalle ? <ProductDetailModal product={detalle} onClose={() => setDetalle(null)} /> : null}
     </div>
   );
 }
 
-function ProductCard({ product, index }: { product: CatalogProduct; index: number }) {
+function ProductCard({
+  product,
+  index,
+  onOpenDetail,
+}: {
+  product: CatalogProduct;
+  index: number;
+  onOpenDetail: () => void;
+}) {
   const { isSelected, toggle, quota, items } = useSelection();
   const [flash, setFlash] = useState<"quota_full" | null>(null);
   const selected = isSelected(product.variantId);
@@ -70,7 +86,12 @@ function ProductCard({ product, index }: { product: CatalogProduct; index: numbe
       }`}
       style={{ animationDelay: `${Math.min(index, 11) * 45}ms` }}
     >
-      <div className={`relative aspect-square ${softTone(index)}`}>
+      <button
+        type="button"
+        onClick={onOpenDetail}
+        aria-label={`Ver detalles de ${product.title}`}
+        className={`relative block aspect-square w-full cursor-pointer ${softTone(index)}`}
+      >
         {product.featuredImageUrl ? (
           <Image
             src={product.featuredImageUrl}
@@ -90,14 +111,20 @@ function ProductCard({ product, index }: { product: CatalogProduct; index: numbe
             <CheckIcon className="size-4" />
           </span>
         ) : null}
-      </div>
+        <span className="absolute inset-x-2.5 bottom-2.5 rounded-full bg-white/90 py-1 text-center text-[11px] font-semibold text-caramba-grafito/70 opacity-0 backdrop-blur transition-opacity group-hover:opacity-100">
+          Ver detalle
+        </span>
+      </button>
       <div className="flex flex-1 flex-col gap-1 bg-white p-3.5">
         {product.vendor ? (
           <p className="text-[11px] font-bold uppercase tracking-widest text-caramba-verde-texto">
             {product.vendor}
           </p>
         ) : null}
-        <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-caramba-grafito">
+        <h3
+          onClick={onOpenDetail}
+          className="line-clamp-2 cursor-pointer text-sm font-semibold leading-snug text-caramba-grafito hover:underline"
+        >
           {product.title}
         </h3>
         <div className="mt-auto pt-2.5">
