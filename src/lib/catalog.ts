@@ -158,7 +158,12 @@ export async function getCampaignCatalog(opts: {
       productType: products.productType,
       tags: products.tags,
       featuredImageUrl: products.featuredImageUrl,
-      variantId: sql<number>`${variants.shopifyId}`.as("variant_id"),
+      // .mapWith(Number) NO es opcional: en un fragmento sql`` crudo, Drizzle no
+      // aplica el codec de la columna, y un bigint (int8) llega como STRING
+      // desde Postgres. El tipo decía number y en runtime era string, así que
+      // el JSON.stringify del carrito mandaba ["4030…"] y el pedido moría en
+      // la validación (z.number). Ver scripts/test-catalog-types.ts.
+      variantId: sql<number>`${variants.shopifyId}`.mapWith(Number).as("variant_id"),
       inventoryItemId: variants.inventoryItemId,
       available: inventoryLevels.available,
     })

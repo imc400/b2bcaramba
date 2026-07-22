@@ -160,7 +160,11 @@ export async function verifyOtpAction(
 // ---------------------------------------------------------------------------
 
 const orderSchema = z.object({
-  variantIds: z.array(z.number().int().positive()).min(1).max(10),
+  // coerce a propósito: los ids de variante son bigint y pueden llegar como
+  // string desde el JSON del carrito. Un id numérico sigue siendo obligatorio
+  // (coerce falla con texto no numérico), pero un bigint-como-string no debe
+  // tumbar el pedido. Defensa en profundidad del fix en catalog.ts.
+  variantIds: z.array(z.coerce.number().int().positive()).min(1).max(10),
   recipientName: z.string().min(3).max(120),
   phone: z.string().min(8).max(20),
   addressLine: z.string().min(5).max(200),
