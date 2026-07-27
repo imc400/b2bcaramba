@@ -433,3 +433,30 @@ export const auditLog = pgTable(
   },
   (t) => [index("audit_log_created_idx").on(t.createdAt)],
 );
+
+// ---------------------------------------------------------------------------
+// Entregabilidad: eventos que Resend reporta por webhook.
+// Sin esto, una invitación que rebota se marcaba como enviada y ese
+// colaborador nunca recibía su regalo — en silencio.
+// ---------------------------------------------------------------------------
+
+export const emailEvents = pgTable(
+  "email_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    /** id del mensaje en Resend, para no procesar el mismo evento dos veces */
+    messageId: text("message_id"),
+    email: text("email").notNull(),
+    /** delivered | bounced | complained | delivery_delayed */
+    tipo: text("tipo").notNull(),
+    /** motivo del rebote (hard/soft, buzón inexistente, etc.) */
+    motivo: text("motivo"),
+    ocurridoEn: timestamp("ocurrido_en", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("email_events_email_idx").on(t.email),
+    index("email_events_tipo_idx").on(t.tipo),
+    uniqueIndex("email_events_message_tipo_idx").on(t.messageId, t.tipo),
+  ],
+);

@@ -85,11 +85,15 @@ Cambia su estado a **Anulado** en `/admin/pedidos`. Eso **repone el stock en Sho
 | Automático, domingo 05:00 UTC | Full-sync por Bulk Operations |
 | Automático, cada 6 h | Chequeo de salud + alerta si hay problemas |
 | Automático, diario 03:55 UTC | Backup de la base (Supabase) |
-| A mano, cada varios meses | Podar `webhook_events` (crece ~1.500/día; 30k al 27-jul) |
+| Automático, cada hora | Poda de tablas efímeras (webhooks >30 días, OTP, sesiones y rate limits vencidos) |
 
-### Podar el historial de webhooks
+### Correos que rebotan
 
-```sql
-DELETE FROM webhook_events WHERE received_at < now() - interval '60 days';
-```
-Solo sirve para deduplicar entregas repetidas de Shopify; más allá de unos días no aporta.
+Resend avisa por webhook (`/api/webhooks/resend`, secreto en `RESEND_WEBHOOK_SECRET`)
+cuando un correo rebota o alguien marca spam. Esos casos:
+
+- Aparecen como **"Rebotó"** en `/admin/colaboradores` (esa persona NO recibió su invitación).
+- Disparan un **aviso en el chequeo de salud** si hubo alguno en los últimos 7 días.
+
+Qué hacer: corregir el correo con el lápiz en la tabla y volver a apretar "Enviar invitaciones"
+(quien no recibió sigue como pendiente y se reintenta solo).

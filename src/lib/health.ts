@@ -1,7 +1,7 @@
 import "server-only";
-import { and, count, desc, eq, gt, isNotNull, lt, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, isNotNull, lt, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { orders, syncState, webhookEvents } from "@/db/schema";
+import { emailEvents, orders, syncState, webhookEvents } from "@/db/schema";
 
 /**
  * Chequeo de salud de la plataforma. Existe porque hasta ahora NADIE se
@@ -169,6 +169,33 @@ async function chequearPedidosEstancados(): Promise<Chequeo> {
   };
 }
 
+/** Correos que rebotaron: esos colaboradores nunca recibieron su invitación. */
+async function chequearRebotes(): Promise<Chequeo> {
+  const desde = new Date(Date.now() - 7 * 24 * 3_600_000);
+  const filas = await db
+    .select({ email: emailEvents.email, tipo: emailEvents.tipo })
+    .from(emailEvents)
+    .where(
+      and(
+        gt(emailEvents.ocurridoEn, desde),
+        inArray(emailEvents.tipo, ["bounced", "complained"]),
+      ),
+    )
+    .limit(50);
+
+  const correos = [...new Set(filas.map((f) => f.email))];
+  return {
+    id: "rebotes",
+    titulo: "Correos que rebotaron",
+    severidad: correos.length > 0 ? "aviso" : "ok",
+    detalle:
+      correos.length === 0
+        ? "Ninguno en los últimos 7 días."
+        : `${correos.length} en 7 días: ${correos.slice(0, 3).join(", ")}${correos.length > 3 ? "…" : ""}. Esas personas NO recibieron su invitación.`,
+    accion: "Corrige el correo en /admin/colaboradores y vuelve a invitar.",
+  };
+}
+
 /** El gate que decide si los pedidos descuentan stock real en Shopify. */
 async function chequearConfiguracion(): Promise<Chequeo> {
   const faltantes: string[] = [];
@@ -192,6 +219,7 @@ export async function generarReporteSalud(): Promise<ReporteSalud> {
     seguro("webhooks", "Webhooks de Shopify", chequearWebhooks),
     seguro("pedidos_problema", "Pedidos que requieren atención", chequearPedidosConProblema),
     seguro("pedidos_estancados", "Pedidos sin preparar", chequearPedidosEstancados),
+    seguro("rebotes", "Correos que rebotaron", chequearRebotes),
     seguro("configuracion", "Configuración de producción", chequearConfiguracion),
   ]);
 

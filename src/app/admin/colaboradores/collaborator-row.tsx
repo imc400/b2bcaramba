@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Clock, Pencil, Trash2 } from "lucide-react";
+import { Check, Clock, Pencil, Trash2, TriangleAlert } from "lucide-react";
 import { useState, useTransition } from "react";
 import { Input } from "@/components/ui";
 import { deleteCollaboratorAction, updateCollaboratorAction } from "./actions";
@@ -14,6 +14,8 @@ export type ColaboradorVista = {
   quota: number;
   usedQuota: number;
   invitadoEl: string | null;
+  /** Su correo rebotó: nunca recibió la invitación */
+  reboto: boolean;
 };
 
 /**
@@ -139,7 +141,15 @@ export function CollaboratorRow({ colaborador }: { colaborador: ColaboradorVista
       </td>
       <td className="px-5 py-3.5 text-caramba-grafito/80">{colaborador.name ?? "—"}</td>
       <td className="px-3 py-3.5">
-        {colaborador.invitadoEl ? (
+        {colaborador.reboto ? (
+          <span
+            title="El correo rebotó: esta persona NO recibió su invitación"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-caramba-rojo-texto"
+          >
+            <TriangleAlert className="size-3.5" strokeWidth={2} />
+            Rebotó
+          </span>
+        ) : colaborador.invitadoEl ? (
           <span className="inline-flex items-center gap-1.5 text-xs font-medium text-caramba-verde-texto">
             <Check className="size-3.5" strokeWidth={2.5} />
             {colaborador.invitadoEl}

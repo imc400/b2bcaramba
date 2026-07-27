@@ -1,7 +1,16 @@
 import "server-only";
-import { eq } from "drizzle-orm";
+import { eq, lt } from "drizzle-orm";
 import { db } from "@/db";
-import { syncState } from "@/db/schema";
+import {
+  adminMagicLinks,
+  adminSessions,
+  emailEvents,
+  otpCodes,
+  rateLimits,
+  sessions,
+  syncState,
+  webhookEvents,
+} from "@/db/schema";
 import { shopifyAdmin } from "@/lib/shopify/client";
 import { RECONCILIATION_QUERY } from "@/lib/shopify/operations";
 import { syncProductFromShopify } from "@/lib/shopify/sync-product";
@@ -24,6 +33,7 @@ export async function reconcileCatalogCore(): Promise<{
   totalSynced: number;
   since: string;
   newCheckpoint: string;
+  podados: Record<string, number>;
 }> {
   const row = await db.query.syncState.findFirst({ where: eq(syncState.key, CHECKPOINT_KEY) });
   const stored = (row?.value as { iso?: string } | undefined)?.iso;
@@ -58,5 +68,43 @@ export async function reconcileCatalogCore(): Promise<{
       set: { value: { iso: newCheckpoint }, updatedAt: new Date() },
     });
 
-  return { totalSynced, since, newCheckpoint };
+  const podados = await podarTablasEfimeras();
+
+  return { totalSynced, since, newCheckpoint, podados };
+}
+
+/**
+ * Poda de tablas que crecen sin techo. `webhook_events` sumaba ~1.500 filas
+ * diarias (30 mil en 18 días, ~600 mil al año) y solo sirve para deduplicar
+ * reentregas de Shopify, que ocurren en minutos. Las demás guardan tokens y
+ * ventanas de rate limit ya vencidos.
+ *
+ * Va pegado a la reconciliación horaria para no depender de otro cron.
+ */
+export async function podarTablasEfimeras(): Promise<Record<string, number>> {
+  const dias = (n: number) => new Date(Date.now() - n * 24 * 3_600_000);
+  const resultado: Record<string, number> = {};
+
+  // El driver postgres.js devuelve el número de filas afectadas en `count`.
+  const tareas: [string, () => Promise<unknown>][] = [
+    ["webhook_events", () => db.delete(webhookEvents).where(lt(webhookEvents.receivedAt, dias(30)))],
+    ["otp_codes", () => db.delete(otpCodes).where(lt(otpCodes.expiresAt, dias(2)))],
+    ["sessions", () => db.delete(sessions).where(lt(sessions.expiresAt, dias(7)))],
+    ["admin_magic_links", () => db.delete(adminMagicLinks).where(lt(adminMagicLinks.expiresAt, dias(7)))],
+    ["admin_sessions", () => db.delete(adminSessions).where(lt(adminSessions.expiresAt, dias(7)))],
+    ["rate_limits", () => db.delete(rateLimits).where(lt(rateLimits.windowStart, dias(1)))],
+    ["email_events", () => db.delete(emailEvents).where(lt(emailEvents.ocurridoEn, dias(180)))],
+  ];
+
+  for (const [nombre, ejecutar] of tareas) {
+    try {
+      const r = (await ejecutar()) as { count?: number } | undefined;
+      const n = r?.count ?? 0;
+      if (n > 0) resultado[nombre] = n;
+    } catch (err) {
+      // La poda es mantención: que falle no debe tumbar la reconciliación.
+      console.error(`[poda] ${nombre} falló:`, err);
+    }
+  }
+  return resultado;
 }

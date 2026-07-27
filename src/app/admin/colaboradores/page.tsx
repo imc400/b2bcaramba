@@ -1,6 +1,6 @@
-import { and, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { campaigns, collaborators, companies } from "@/db/schema";
+import { campaigns, collaborators, companies, emailEvents } from "@/db/schema";
 import { AdminShell, StatCard } from "@/components/admin-shell";
 import { requireAdmin } from "@/lib/auth/admin";
 import { formatRut } from "@/lib/auth/rut";
@@ -91,6 +91,25 @@ export default async function ColaboradoresPage({
 
   const totalListado = filtrados.n;
   const totalPaginas = Math.max(1, Math.ceil(totalListado / POR_PAGINA));
+
+  // Correos de esta página que rebotaron: se marcan en la tabla para que
+  // Javiera corrija el correo en vez de suponer que la invitación llegó.
+  const correosPagina = rows.map((r) => r.collaborator.email).filter((e): e is string => Boolean(e));
+  const rebotados = new Set(
+    correosPagina.length > 0
+      ? (
+          await db
+            .selectDistinct({ email: emailEvents.email })
+            .from(emailEvents)
+            .where(
+              and(
+                inArray(emailEvents.email, correosPagina),
+                inArray(emailEvents.tipo, ["bounced", "complained"]),
+              ),
+            )
+        ).map((r) => r.email)
+      : [],
+  );
 
   const [pendientes] = activeCampaignId
     ? await db
@@ -184,6 +203,7 @@ export default async function ColaboradoresPage({
                     invitadoEl: c.invitedAt
                       ? c.invitedAt.toLocaleDateString("es-CL", { day: "2-digit", month: "short" })
                       : null,
+                    reboto: c.email ? rebotados.has(c.email) : false,
                   }}
                 />
               ))}
