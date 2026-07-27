@@ -26,10 +26,14 @@ const STATUS_LABEL: Record<string, { label: string; tone: "amarillo" | "verde" |
 export default async function PedidosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ empresa?: string; estado?: string; q?: string }>;
+  searchParams: Promise<{ empresa?: string; estado?: string; q?: string; pagina?: string }>;
 }) {
   const actor = await requireAdmin();
-  const { empresa, estado, q } = await searchParams;
+  const { empresa, estado, q, pagina: paginaParam } = await searchParams;
+
+  // Paginación: antes cortaba en 200 pedidos sin avisar.
+  const POR_PAGINA = 50;
+  const pagina = Math.max(1, Number(paginaParam) || 1);
 
   const conditions: SQL[] = [];
   if (empresa) conditions.push(eq(companies.slug, empresa));
@@ -63,7 +67,19 @@ export default async function PedidosPage({
     .innerJoin(collaborators, eq(orders.collaboratorId, collaborators.id))
     .where(conditions.length ? and(...conditions) : undefined)
     .orderBy(desc(orders.createdAt))
-    .limit(200);
+    .limit(POR_PAGINA)
+    .offset((pagina - 1) * POR_PAGINA);
+
+  // Cuántos pedidos hay con los filtros actuales (para la paginación).
+  const [{ totalFiltrado }] = await db
+    .select({ totalFiltrado: sql<number>`count(*)::int` })
+    .from(orders)
+    .innerJoin(companies, eq(orders.companyId, companies.id))
+    .innerJoin(campaigns, eq(orders.campaignId, campaigns.id))
+    .innerJoin(collaborators, eq(orders.collaboratorId, collaborators.id))
+    .where(conditions.length ? and(...conditions) : undefined);
+
+  const totalPaginas = Math.max(1, Math.ceil(totalFiltrado / POR_PAGINA));
 
   const [stats] = await db
     .select({
@@ -213,6 +229,39 @@ export default async function PedidosPage({
           </tbody>
         </table>
       </div>
+
+      {/* Paginación explícita: antes cortaba en 200 sin avisar */}
+      {totalFiltrado > 0 ? (
+        <div className="mt-4 flex items-center justify-between gap-4 px-1 text-sm text-caramba-grafito/60">
+          <span>
+            Mostrando <b className="text-caramba-grafito">{rows.length}</b> de{" "}
+            <b className="text-caramba-grafito">{totalFiltrado}</b> pedidos
+          </span>
+          {totalPaginas > 1 ? (
+            <span className="flex items-center gap-2">
+              {pagina > 1 ? (
+                <Link
+                  href={`/admin/pedidos?${new URLSearchParams({ ...(empresa ? { empresa } : {}), ...(estado ? { estado } : {}), ...(q ? { q } : {}), pagina: String(pagina - 1) })}`}
+                  className="rounded-lg border border-caramba-grafito/15 px-3 py-1.5 font-medium hover:border-caramba-grafito/40"
+                >
+                  ← Anterior
+                </Link>
+              ) : null}
+              <span className="tabular-nums">
+                Página {pagina} de {totalPaginas}
+              </span>
+              {pagina < totalPaginas ? (
+                <Link
+                  href={`/admin/pedidos?${new URLSearchParams({ ...(empresa ? { empresa } : {}), ...(estado ? { estado } : {}), ...(q ? { q } : {}), pagina: String(pagina + 1) })}`}
+                  className="rounded-lg border border-caramba-grafito/15 px-3 py-1.5 font-medium hover:border-caramba-grafito/40"
+                >
+                  Siguiente →
+                </Link>
+              ) : null}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
     </AdminShell>
   );
 }

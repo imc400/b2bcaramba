@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { campaigns, collaborators, companies } from "@/db/schema";
 import { AdminShell, StatCard } from "@/components/admin-shell";
@@ -11,10 +11,10 @@ import { InviteButton } from "./invite-button";
 export default async function ColaboradoresPage({
   searchParams,
 }: {
-  searchParams: Promise<{ campana?: string }>;
+  searchParams: Promise<{ campana?: string; pagina?: string; q?: string }>;
 }) {
   const actor = await requireAdmin();
-  const { campana } = await searchParams;
+  const { campana, pagina: paginaParam, q } = await searchParams;
 
   const campaignsList = await db
     .select({
@@ -29,6 +29,25 @@ export default async function ColaboradoresPage({
   const activeCampaignId = campana ?? campaignsList[0]?.id;
   const campanaActiva = campaignsList.find((c) => c.id === activeCampaignId);
 
+  // Búsqueda y paginación: una campaña de 2.000 personas no cabe en la vista,
+  // y antes se truncaba en silencio.
+  const POR_PAGINA = 100;
+  const pagina = Math.max(1, Number(paginaParam) || 1);
+  const busca = (q ?? "").trim();
+
+  const filtro = activeCampaignId
+    ? and(
+        eq(collaborators.campaignId, activeCampaignId),
+        busca
+          ? or(
+              ilike(collaborators.email, `%${busca}%`),
+              ilike(collaborators.name, `%${busca}%`),
+              ilike(collaborators.rut, `%${busca.replace(/[.\s]/g, "")}%`),
+            )
+          : undefined,
+      )
+    : undefined;
+
   const rows = activeCampaignId
     ? await db
         .select({
@@ -40,10 +59,38 @@ export default async function ColaboradoresPage({
           )`,
         })
         .from(collaborators)
-        .where(eq(collaborators.campaignId, activeCampaignId))
+        .where(filtro)
         .orderBy(collaborators.name)
-        .limit(500)
+        .limit(POR_PAGINA)
+        .offset((pagina - 1) * POR_PAGINA)
     : [];
+
+  // Totales en SQL sobre TODA la campaña. Antes se sumaban las filas de la
+  // página, así que con >500 colaboradores el "cupo usado" salía mal.
+  const [totales] = activeCampaignId
+    ? await db
+        .select({
+          personas: sql<number>`count(*)::int`,
+          cupo: sql<number>`coalesce(sum(${collaborators.quota}),0)::int`,
+          usado: sql<number>`(
+            SELECT coalesce(sum(oi.quantity), 0)::int
+            FROM orders o JOIN order_items oi ON oi.order_id = o.id
+            WHERE o.campaign_id = ${activeCampaignId} AND o.status != 'anulado'
+          )`,
+        })
+        .from(collaborators)
+        .where(eq(collaborators.campaignId, activeCampaignId))
+    : [{ personas: 0, cupo: 0, usado: 0 }];
+
+  const [filtrados] = activeCampaignId && busca
+    ? await db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(collaborators)
+        .where(filtro)
+    : [{ n: totales.personas }];
+
+  const totalListado = filtrados.n;
+  const totalPaginas = Math.max(1, Math.ceil(totalListado / POR_PAGINA));
 
   const [pendientes] = activeCampaignId
     ? await db
@@ -55,8 +102,6 @@ export default async function ColaboradoresPage({
         .where(and(eq(collaborators.campaignId, activeCampaignId), isNull(collaborators.invitedAt)))
     : [{ total: 0, sinCorreo: 0 }];
 
-  const totalQuota = rows.reduce((s, r) => s + r.collaborator.quota, 0);
-  const totalUsed = rows.reduce((s, r) => s + r.usedQuota, 0);
 
   return (
     <AdminShell active="/admin/colaboradores" title="Colaboradores" usuario={actor}>
@@ -78,10 +123,37 @@ export default async function ColaboradoresPage({
             />
           ) : null}
           <div className="grid grid-cols-2 gap-4">
-            <StatCard value={rows.length} label="colaboradores" />
-            <StatCard value={`${totalUsed}/${totalQuota}`} label="regalos usados" tone="verde" />
+            <StatCard value={totales.personas} label="colaboradores" />
+            <StatCard value={`${totales.usado}/${totales.cupo}`} label="regalos usados" tone="verde" />
           </div>
         </div>
+
+        <div className="min-w-0 space-y-3">
+          {/* Buscador: con 2.000 personas, encontrar a una a mano es inviable */}
+          <form method="GET" className="flex gap-2">
+            <input type="hidden" name="campana" value={activeCampaignId ?? ""} />
+            <input
+              type="search"
+              name="q"
+              defaultValue={busca}
+              placeholder="Buscar por nombre, correo o RUT…"
+              className="min-w-0 flex-1 rounded-xl border border-caramba-grafito/15 bg-white px-4 py-2.5 text-sm outline-none focus:border-caramba-verde"
+            />
+            <button
+              type="submit"
+              className="shrink-0 rounded-xl border border-caramba-grafito/15 bg-white px-4 text-sm font-semibold text-caramba-grafito/70 hover:border-caramba-grafito/40"
+            >
+              Buscar
+            </button>
+            {busca ? (
+              <a
+                href={`/admin/colaboradores?campana=${activeCampaignId ?? ""}`}
+                className="flex shrink-0 items-center px-2 text-sm font-medium text-caramba-grafito/50 hover:text-caramba-grafito"
+              >
+                Limpiar
+              </a>
+            ) : null}
+          </form>
 
         {/* min-w-0: sin esto el hijo del grid crece con su contenido y la
             tabla se corta a la derecha en vez de scrollear. */}
@@ -118,12 +190,49 @@ export default async function ColaboradoresPage({
               {rows.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-5 py-12 text-center text-caramba-grafito/45">
-                    Sin colaboradores en esta campaña. Importa un Excel para partir.
+                    {busca
+                      ? `Nadie coincide con "${busca}" en esta campaña.`
+                      : "Sin colaboradores en esta campaña. Importa un Excel para partir."}
                   </td>
                 </tr>
               ) : null}
             </tbody>
           </table>
+        </div>
+
+          {/* Paginación explícita: antes se truncaba en 500 sin avisar */}
+          {totalListado > 0 ? (
+            <div className="flex items-center justify-between gap-4 px-1 text-sm text-caramba-grafito/60">
+              <span>
+                Mostrando <b className="text-caramba-grafito">{rows.length}</b> de{" "}
+                <b className="text-caramba-grafito">{totalListado}</b>
+                {busca ? " que coinciden" : " colaboradores"}
+              </span>
+              {totalPaginas > 1 ? (
+                <span className="flex items-center gap-2">
+                  {pagina > 1 ? (
+                    <a
+                      href={`/admin/colaboradores?campana=${activeCampaignId}&pagina=${pagina - 1}${busca ? `&q=${encodeURIComponent(busca)}` : ""}`}
+                      className="rounded-lg border border-caramba-grafito/15 px-3 py-1.5 font-medium hover:border-caramba-grafito/40"
+                    >
+                      ← Anterior
+                    </a>
+                  ) : null}
+                  <span className="tabular-nums">
+                    Página {pagina} de {totalPaginas}
+                  </span>
+                  {pagina < totalPaginas ? (
+                    <a
+                      href={`/admin/colaboradores?campana=${activeCampaignId}&pagina=${pagina + 1}${busca ? `&q=${encodeURIComponent(busca)}` : ""}`}
+                      className="rounded-lg border border-caramba-grafito/15 px-3 py-1.5 font-medium hover:border-caramba-grafito/40"
+                    >
+                      Siguiente →
+                    </a>
+                  ) : null}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </div>
     </AdminShell>

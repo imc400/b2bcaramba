@@ -42,6 +42,15 @@ export function InviteButton({
             <p className="rounded-xl bg-caramba-verde-soft px-4 py-3 text-sm font-medium text-caramba-verde-texto">
               Se enviaron {resultado.enviadas} {invitaciones(resultado.enviadas)}.
             </p>
+            {/* Un envío parcial NO se muestra como éxito: si el plan de Resend
+                topó su límite o un correo rebotó, hay que decirlo. */}
+            {resultado.fallidas && resultado.fallidas > 0 ? (
+              <p className="rounded-xl bg-caramba-amarillo-soft px-4 py-3 text-xs font-medium text-caramba-amarillo-texto">
+                {resultado.fallidas} {invitaciones(resultado.fallidas)} no salieron (correo
+                rebotado o límite de envío del plan). Siguen como pendientes: vuelve a apretar el
+                botón más tarde y se reintentan solas.
+              </p>
+            ) : null}
             {resultado.sinCorreo > 0 ? (
               <p className="text-xs text-caramba-grafito/65">
                 {resultado.sinCorreo} {colaboradores(resultado.sinCorreo)} sin correo{" "}

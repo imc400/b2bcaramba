@@ -1,14 +1,14 @@
 "use server";
 
 import ExcelJS from "exceljs";
-import { and, count, eq, isNull, ne, or, sql } from "drizzle-orm";
+import { and, count, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { auditLog, campaigns, collaborators, companies, orderItems, orders } from "@/db/schema";
 import { requireAdmin } from "@/lib/auth/admin";
 import { isValidRut, normalizeRut } from "@/lib/auth/rut";
 import { isCampaignOpen } from "@/lib/campaign";
-import { collaboratorInviteHtml, sendEmail } from "@/lib/email/send";
+import { collaboratorInviteHtml, sendEmailBatch } from "@/lib/email/send";
 
 export type ImportResult = {
   status: "idle" | "ok" | "error";
@@ -37,6 +37,26 @@ export async function importCollaboratorsAction(
   if (file.size > 5 * 1024 * 1024) {
     return { status: "error", message: "Archivo muy grande (máx 5 MB)." };
   }
+
+  const resultado = await importarColaboradores({ campaignId, file, actorEmail: actor.email });
+  revalidatePath("/admin/colaboradores");
+  return resultado;
+}
+
+/**
+ * Núcleo del import, sin sesión: así se puede probar a escala fuera de una
+ * request (ver scripts/test-import-escala.ts). El action de arriba autentica
+ * y delega aquí.
+ */
+export async function importarColaboradores({
+  campaignId,
+  file,
+  actorEmail,
+}: {
+  campaignId: string;
+  file: File;
+  actorEmail: string;
+}): Promise<ImportResult> {
 
   const [campaign] = await db.select().from(campaigns).where(eq(campaigns.id, campaignId));
   if (!campaign) return { status: "error", message: "Campaña no existe." };
@@ -85,10 +105,36 @@ export async function importCollaboratorsAction(
     };
   }
 
-  // --- Upsert por fila -----------------------------------------------------
+  // --- Upsert POR LOTES ----------------------------------------------------
+  // Antes esto hacía 2 consultas por fila, secuenciales: con 2.000
+  // colaboradores son 4.000 viajes a Supabase (São Paulo) y la acción moría
+  // por timeout. Ahora: 1 lectura + N/500 escrituras.
   let imported = 0;
   let updated = 0;
   const skipped: { row: number; reason: string }[] = [];
+
+  // 1) Todo lo que ya existe en la campaña, de una vez.
+  const existentes = await db
+    .select({
+      id: collaborators.id,
+      email: collaborators.email,
+      rut: collaborators.rut,
+      name: collaborators.name,
+    })
+    .from(collaborators)
+    .where(eq(collaborators.campaignId, campaignId));
+
+  const porEmail = new Map(existentes.filter((e) => e.email).map((e) => [e.email!, e]));
+  const porRut = new Map(existentes.filter((e) => e.rut).map((e) => [e.rut!, e]));
+
+  type Nuevo = { email: string | null; rut: string | null; name: string | null; quota: number };
+  type Cambio = { id: string; name: string | null; quota: number; rut: string | null };
+  const nuevos: Nuevo[] = [];
+  const cambios: Cambio[] = [];
+  // El mismo correo puede venir repetido dentro del archivo: la última fila
+  // gana, igual que antes (cuando la segunda encontraba a la primera en la DB).
+  const vistosEmail = new Map<string, number>();
+  const vistosRut = new Map<string, number>();
 
   for (let i = 1; i < rows.length; i++) {
     const cells = rows[i];
@@ -110,45 +156,72 @@ export async function importCollaboratorsAction(
       continue;
     }
 
-    const existing = await db
-      .select()
-      .from(collaborators)
-      .where(
-        and(
-          eq(collaborators.campaignId, campaignId),
-          email ? eq(collaborators.email, email) : eq(collaborators.rut, rut!),
-        ),
-      )
-      .limit(1);
+    // ¿Ya está en la base? (mismo criterio de antes: correo manda, si no RUT)
+    const yaExiste = email ? porEmail.get(email) : porRut.get(rut!);
+    if (yaExiste) {
+      cambios.push({
+        id: yaExiste.id,
+        name: name || yaExiste.name,
+        quota,
+        rut: rut ?? yaExiste.rut,
+      });
+      continue;
+    }
 
-    if (existing.length > 0) {
-      await db
-        .update(collaborators)
-        .set({ name: name || existing[0].name, quota, rut: rut ?? existing[0].rut })
-        .where(eq(collaborators.id, existing[0].id));
-      updated++;
-    } else {
-      await db.insert(collaborators).values({
+    // ¿Duplicado dentro del propio archivo? Sobrescribimos la entrada previa.
+    const idxPrevio = email ? vistosEmail.get(email) : vistosRut.get(rut!);
+    if (idxPrevio !== undefined) {
+      nuevos[idxPrevio] = { email, rut, name, quota };
+      continue;
+    }
+    if (email) vistosEmail.set(email, nuevos.length);
+    if (rut) vistosRut.set(rut, nuevos.length);
+    nuevos.push({ email, rut, name, quota });
+  }
+
+  // 2) Escrituras en lotes (Postgres tiene tope de parámetros por sentencia).
+  const LOTE = 500;
+  for (let i = 0; i < nuevos.length; i += LOTE) {
+    const lote = nuevos.slice(i, i + LOTE);
+    await db.insert(collaborators).values(
+      lote.map((n) => ({
         companyId: campaign.companyId,
         campaignId,
-        email,
-        rut,
-        name,
-        quota,
-      });
-      imported++;
-    }
+        email: n.email,
+        rut: n.rut,
+        name: n.name,
+        quota: n.quota,
+      })),
+    );
+    imported += lote.length;
+  }
+
+  // UPDATE ... FROM (VALUES ...): una sentencia por lote en vez de una por fila.
+  for (let i = 0; i < cambios.length; i += LOTE) {
+    const lote = cambios.slice(i, i + LOTE);
+    const valores = sql.join(
+      lote.map(
+        (c) =>
+          sql`(${c.id}::uuid, ${c.name}::text, ${c.quota}::int, ${c.rut}::text)`,
+      ),
+      sql`, `,
+    );
+    await db.execute(sql`
+      UPDATE collaborators AS c
+      SET name = v.name, quota = v.quota, rut = v.rut
+      FROM (VALUES ${valores}) AS v(id, name, quota, rut)
+      WHERE c.id = v.id`);
+    updated += lote.length;
   }
 
   await db.insert(auditLog).values({
-    actorEmail: actor.email,
+    actorEmail,
     action: "collaborators_import",
     entity: "campaign",
     entityId: campaignId,
     meta: { file: file.name, imported, updated, skipped: skipped.length },
   });
 
-  revalidatePath("/admin/colaboradores");
   return {
     status: "ok",
     imported,
@@ -278,7 +351,13 @@ export async function updateCollaboratorAction(
   return { ok: true };
 }
 
-export type InviteResult = { enviadas: number; sinCorreo: number; error?: string };
+export type InviteResult = {
+  enviadas: number;
+  sinCorreo: number;
+  /** No salieron (rebote, límite del plan): reaparecen como pendientes */
+  fallidas?: number;
+  error?: string;
+};
 
 /**
  * Envía a cada colaborador el link de su empresa.
@@ -309,30 +388,39 @@ export async function sendCollaboratorInvitesAction(campaignId: string): Promise
   const conCorreo = pendientes.filter((c) => c.email);
   const url = `${process.env.NEXT_PUBLIC_APP_URL}/${ctx.company.slug}`;
 
-  let enviadas = 0;
-  for (const colaborador of conCorreo) {
-    try {
-      await sendEmail({
-        to: [colaborador.email!],
-        subject: `Tu regalo de ${ctx.company.name}, cortesía de Caramba`,
-        html: collaboratorInviteHtml({
-          companyName: ctx.company.name,
-          bannerTitle: ctx.campaign.bannerTitle,
-          url,
-          quota: colaborador.quota,
-          endsAt: ctx.campaign.endsAt,
-        }),
-      });
-      await db
-        .update(collaborators)
-        .set({ invitedAt: new Date() })
-        .where(eq(collaborators.id, colaborador.id));
-      enviadas++;
-    } catch (err) {
-      // Un correo rebotado no debe frenar a los demás; el colaborador queda
-      // sin marcar y entra en el próximo envío.
-      console.error(`[invitación] falló para ${colaborador.email}:`, err);
-    }
+  // Envío por lotes: de a uno, 2.000 colaboradores × ~300 ms superaban los 10
+  // minutos y la acción moría por timeout. Con lotes de 100 son 20 llamadas.
+  const { enviados, errores } = await sendEmailBatch(
+    conCorreo.map((c) => ({
+      to: c.email!,
+      subject: `Tu regalo de ${ctx.company.name}, cortesía de Caramba`,
+      html: collaboratorInviteHtml({
+        companyName: ctx.company.name,
+        bannerTitle: ctx.campaign.bannerTitle,
+        url,
+        quota: c.quota,
+        endsAt: ctx.campaign.endsAt,
+      }),
+    })),
+  );
+
+  // Solo se marcan los que SÍ salieron: los demás reaparecen como pendientes
+  // y se reintentan en el próximo envío.
+  const idsEnviados = [...enviados].map((i) => conCorreo[i].id);
+  const LOTE_UPDATE = 500;
+  for (let i = 0; i < idsEnviados.length; i += LOTE_UPDATE) {
+    await db
+      .update(collaborators)
+      .set({ invitedAt: new Date() })
+      .where(inArray(collaborators.id, idsEnviados.slice(i, i + LOTE_UPDATE)));
+  }
+
+  const enviadas = idsEnviados.length;
+  if (errores.length > 0) {
+    console.error(
+      `[invitaciones ${ctx.company.slug}] ${errores.length} fallaron:`,
+      errores.slice(0, 5).map((e) => `${conCorreo[e.indice]?.email}: ${e.motivo}`).join(" | "),
+    );
   }
 
   await db.insert(auditLog).values({
@@ -340,9 +428,10 @@ export async function sendCollaboratorInvitesAction(campaignId: string): Promise
     action: "collaborators_invite",
     entity: "campaign",
     entityId: campaignId,
-    meta: { enviadas, sinCorreo, total: pendientes.length },
+    meta: { enviadas, sinCorreo, fallidas: errores.length, total: pendientes.length },
   });
 
   revalidatePath("/admin/colaboradores");
-  return { enviadas, sinCorreo };
+  // fallidas se reporta a la UI: antes un envío parcial se veía como éxito.
+  return { enviadas, sinCorreo, fallidas: errores.length };
 }

@@ -32,6 +32,88 @@ export async function sendEmail(opts: {
   if (error) throw new Error(`Resend: ${error.message}`);
 }
 
+export type MensajeLote = { to: string; subject: string; html: string };
+
+/**
+ * Envío masivo por la API de lotes de Resend (hasta 100 por llamada).
+ *
+ * Existe porque invitar a una campaña grande de a uno era inviable: 2.000
+ * colaboradores × ~300 ms = más de 10 minutos, y la acción moría por timeout
+ * mucho antes. Con lotes son 20 llamadas.
+ *
+ * Devuelve los índices que SÍ salieron, para que el caller marque solo a esos
+ * como invitados (los que fallan se reintentan en el próximo envío). Usa
+ * validación permisiva: un correo malo del Excel no tumba el lote completo.
+ */
+export async function sendEmailBatch(
+  mensajes: MensajeLote[],
+): Promise<{ enviados: Set<number>; errores: { indice: number; motivo: string }[] }> {
+  const enviados = new Set<number>();
+  const errores: { indice: number; motivo: string }[] = [];
+  if (mensajes.length === 0) return { enviados, errores };
+
+  const key = process.env.RESEND_API_KEY;
+  const from = process.env.EMAIL_FROM ?? "Caramba <no-reply@caramba.cl>";
+
+  if (!key) {
+    console.log(`\n═══ ${mensajes.length} EMAILS (dev, sin RESEND_API_KEY) ═══`);
+    for (const [i, m] of mensajes.entries()) {
+      console.log(`  → ${m.to}: ${m.subject}`);
+      enviados.add(i);
+    }
+    console.log("═══════════════════════════════════════\n");
+    return { enviados, errores };
+  }
+
+  const resend = new Resend(key);
+  const TAMANO = 100; // tope de la API de lotes de Resend
+  const PAUSA_MS = 600; // el plan free permite ~2 req/s
+
+  for (let inicio = 0; inicio < mensajes.length; inicio += TAMANO) {
+    const lote = mensajes.slice(inicio, inicio + TAMANO);
+    if (inicio > 0) await new Promise((r) => setTimeout(r, PAUSA_MS));
+
+    try {
+      const { data, error } = await resend.batch.send(
+        lote.map((m) => ({ from, to: [m.to], subject: m.subject, html: m.html })),
+        { batchValidation: "permissive" },
+      );
+
+      if (error) {
+        // Falló el lote entero (rate limit, cuota, credenciales).
+        for (let i = 0; i < lote.length; i++) {
+          errores.push({ indice: inicio + i, motivo: error.message });
+        }
+        // Si es tope de cuota, seguir intentando solo gasta tiempo.
+        if (/rate|limit|quota|too many/i.test(error.message)) {
+          for (let i = inicio + lote.length; i < mensajes.length; i++) {
+            errores.push({ indice: i, motivo: "no se intentó: límite de envío alcanzado" });
+          }
+          break;
+        }
+        continue;
+      }
+
+      const fallidos = new Map(
+        ((data as { errors?: { index: number; message: string }[] } | null)?.errors ?? []).map(
+          (e) => [e.index, e.message],
+        ),
+      );
+      for (let i = 0; i < lote.length; i++) {
+        const motivo = fallidos.get(i);
+        if (motivo) errores.push({ indice: inicio + i, motivo });
+        else enviados.add(inicio + i);
+      }
+    } catch (err) {
+      for (let i = 0; i < lote.length; i++) {
+        errores.push({ indice: inicio + i, motivo: String(err).slice(0, 120) });
+      }
+    }
+  }
+
+  return { enviados, errores };
+}
+
 const brandHeader = `
   <div style="height:6px;background:linear-gradient(90deg,#CC644F,#E1B946,#8CBEA3)"></div>
   <div style="background:#ffffff;padding:32px 0 8px;text-align:center">
