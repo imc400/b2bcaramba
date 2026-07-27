@@ -10,6 +10,8 @@ import { ProductGrid, SelectionBar } from "./product-grid";
 const AGE_PARAM = "edad";
 const CAT_PARAM = "cat";
 const SEARCH_PARAM = "q";
+const PAGE_PARAM = "pagina";
+const POR_PAGINA = 60;
 
 export default async function TiendaPage({
   params,
@@ -26,6 +28,7 @@ export default async function TiendaPage({
   const selectedAges = toArray(sp[AGE_PARAM]);
   const selectedCategories = toArray(sp[CAT_PARAM]);
   const search = typeof sp[SEARCH_PARAM] === "string" ? sp[SEARCH_PARAM] : undefined;
+  const pagina = Math.max(1, Number(sp[PAGE_PARAM]) || 1);
 
   const [{ items, total, facets }, remaining] = await Promise.all([
     getCampaignCatalog({
@@ -34,10 +37,23 @@ export default async function TiendaPage({
       selectedAges,
       selectedCategories,
       search,
-      limit: 60,
+      limit: POR_PAGINA,
+      offset: (pagina - 1) * POR_PAGINA,
     }),
     getRemainingQuota(session.collaborator.id),
   ]);
+
+  const totalPaginas = Math.max(1, Math.ceil(total / POR_PAGINA));
+  /** Conserva los filtros y la búsqueda al cambiar de página. */
+  const linkPagina = (n: number) => {
+    const qs = new URLSearchParams();
+    for (const edad of selectedAges) qs.append(AGE_PARAM, edad);
+    for (const cat of selectedCategories) qs.append(CAT_PARAM, cat);
+    if (search) qs.set(SEARCH_PARAM, search);
+    if (n > 1) qs.set(PAGE_PARAM, String(n));
+    const s = qs.toString();
+    return `/${slug}/tienda${s ? `?${s}` : ""}`;
+  };
 
   const accent = session.campaign.theme?.accentColor ?? "#8CBEA3";
   const textColor = accentText(accent);
@@ -119,6 +135,32 @@ export default async function TiendaPage({
         </p>
 
         <ProductGrid items={items} />
+
+        {/* Paginación: antes se mostraban 60 de N y los otros eran
+            inalcanzables, aunque el conteo de arriba prometía el total. */}
+        {totalPaginas > 1 ? (
+          <nav className="mt-10 flex items-center justify-center gap-3">
+            {pagina > 1 ? (
+              <Link
+                href={linkPagina(pagina - 1)}
+                className="rounded-full border border-caramba-grafito/15 bg-white px-5 py-2.5 text-sm font-semibold text-caramba-grafito/75 transition-colors hover:border-caramba-grafito/40"
+              >
+                ← Anterior
+              </Link>
+            ) : null}
+            <span className="text-sm text-caramba-grafito/55 tabular-nums">
+              Página {pagina} de {totalPaginas}
+            </span>
+            {pagina < totalPaginas ? (
+              <Link
+                href={linkPagina(pagina + 1)}
+                className="rounded-full bg-caramba-rojo px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#b85742]"
+              >
+                Ver más juguetes →
+              </Link>
+            ) : null}
+          </nav>
+        ) : null}
 
         {items.length === 0 ? (
           <div className="mt-16 text-center text-caramba-grafito/50">
