@@ -1,10 +1,10 @@
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
-import { Check, Clock } from "lucide-react";
 import { db } from "@/db";
 import { campaigns, collaborators, companies } from "@/db/schema";
 import { AdminShell, StatCard } from "@/components/admin-shell";
 import { requireAdmin } from "@/lib/auth/admin";
 import { formatRut } from "@/lib/auth/rut";
+import { CollaboratorRow } from "./collaborator-row";
 import { ImportForm } from "./import-form";
 import { InviteButton } from "./invite-button";
 
@@ -60,7 +60,7 @@ export default async function ColaboradoresPage({
 
   return (
     <AdminShell active="/admin/colaboradores" title="Colaboradores" usuario={actor}>
-      <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
+      <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
         <div className="space-y-4">
           <ImportForm
             campaigns={campaignsList.map((c) => ({
@@ -87,59 +87,35 @@ export default async function ColaboradoresPage({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-caramba-grafito/8 text-left text-[11px] font-bold uppercase tracking-wider text-caramba-grafito/60">
-                <th className="px-5 py-3.5">Correo / RUT</th>
-                <th className="px-5 py-3.5">Nombre</th>
-                <th className="px-5 py-3.5">Invitación</th>
-                <th className="px-5 py-3.5">Cupo</th>
-                <th className="px-5 py-3.5">Usado</th>
+                <th className="px-3 py-3.5">Correo / RUT</th>
+                <th className="px-3 py-3.5">Nombre</th>
+                <th className="px-3 py-3.5">Invitación</th>
+                <th className="px-3 py-3.5">Cupo</th>
+                <th className="px-3 py-3.5">Usado</th>
+                <th className="px-3 py-3.5 text-right">Acciones</th>
               </tr>
             </thead>
             <tbody>
               {rows.map(({ collaborator: c, usedQuota }) => (
-                <tr key={c.id} className="border-b border-caramba-grafito/5 last:border-0">
-                  <td className="px-5 py-3.5">
-                    <p className="font-medium text-caramba-grafito">{c.email ?? "—"}</p>
-                    {c.rut ? (
-                      <p className="text-xs text-caramba-grafito/50">{formatRut(c.rut)}</p>
-                    ) : null}
-                  </td>
-                  <td className="px-5 py-3.5 text-caramba-grafito/80">{c.name ?? "—"}</td>
-                  <td className="px-5 py-3.5">
-                    {c.invitedAt ? (
-                      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-caramba-verde-texto">
-                        <Check className="size-3.5" strokeWidth={2.5} />
-                        {c.invitedAt.toLocaleDateString("es-CL", { day: "2-digit", month: "short" })}
-                      </span>
-                    ) : c.email ? (
-                      <span className="inline-flex items-center gap-1.5 text-xs text-caramba-amarillo-texto">
-                        <Clock className="size-3.5" strokeWidth={2} />
-                        Pendiente
-                      </span>
-                    ) : (
-                      <span className="text-xs text-caramba-grafito/40">Sin correo</span>
-                    )}
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <span className="rounded-full bg-caramba-crema px-2.5 py-1 text-xs font-bold">
-                      {c.quota}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <span
-                      className={`rounded-full px-2.5 py-1 text-xs font-bold ${
-                        usedQuota >= c.quota
-                          ? "bg-caramba-verde-soft text-caramba-verde-texto"
-                          : "bg-caramba-crema text-caramba-grafito/60"
-                      }`}
-                    >
-                      {usedQuota}
-                    </span>
-                  </td>
-                </tr>
+                <CollaboratorRow
+                  key={c.id}
+                  colaborador={{
+                    id: c.id,
+                    email: c.email,
+                    rut: c.rut,
+                    rutFormateado: c.rut ? formatRut(c.rut) : null,
+                    name: c.name,
+                    quota: c.quota,
+                    usedQuota,
+                    invitadoEl: c.invitedAt
+                      ? c.invitedAt.toLocaleDateString("es-CL", { day: "2-digit", month: "short" })
+                      : null,
+                  }}
+                />
               ))}
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-5 py-12 text-center text-caramba-grafito/45">
+                  <td colSpan={6} className="px-5 py-12 text-center text-caramba-grafito/45">
                     Sin colaboradores en esta campaña. Importa un Excel para partir.
                   </td>
                 </tr>

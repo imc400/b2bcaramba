@@ -179,3 +179,41 @@ export function orderConfirmationHtml(o: {
     ${brandFooter}
   </div>`;
 }
+
+/** Alerta de salud de la plataforma (la envía el cron de monitoreo). */
+export function healthAlertHtml(o: {
+  severidad: "aviso" | "critico";
+  chequeos: { titulo: string; severidad: string; detalle: string; accion?: string }[];
+  panelUrl: string;
+}): string {
+  const color = o.severidad === "critico" ? "#CC644F" : "#E1B946";
+  const filas = o.chequeos
+    .map((c) => {
+      const icono = c.severidad === "critico" ? "●" : c.severidad === "aviso" ? "●" : "○";
+      const tono = c.severidad === "critico" ? "#CC644F" : c.severidad === "aviso" ? "#8a6d1a" : "#3f7a5c";
+      return `
+      <tr>
+        <td style="padding:12px 0;border-bottom:1px solid #eee">
+          <div style="color:${tono};font-weight:600;font-size:14px">${icono} ${esc(c.titulo)}</div>
+          <div style="color:#555;font-size:13px;margin-top:3px">${esc(c.detalle)}</div>
+          ${c.accion ? `<div style="color:#999;font-size:12px;margin-top:4px">→ ${esc(c.accion)}</div>` : ""}
+        </td>
+      </tr>`;
+    })
+    .join("");
+
+  return `
+  <div style="font-family:system-ui,-apple-system,sans-serif;max-width:560px;margin:auto;border:1px solid #eee;border-radius:16px;overflow:hidden">
+    <div style="height:6px;background:${color}"></div>
+    <div style="padding:28px 32px 32px">
+      <h1 style="font-size:19px;color:#282828;margin:0 0 6px">
+        ${o.severidad === "critico" ? "Algo necesita tu atención" : "Aviso de la plataforma"}
+      </h1>
+      <p style="color:#555;font-size:14px;line-height:1.6;margin:0 0 18px">
+        Revisión automática de Caramba B2B. Solo te escribimos cuando hay algo que mirar.
+      </p>
+      <table style="width:100%;border-collapse:collapse">${filas}</table>
+      <p style="margin-top:22px">${boton(`${o.panelUrl}/admin/ajustes`, "Ver estado en el panel")}</p>
+    </div>
+  </div>`;
+}

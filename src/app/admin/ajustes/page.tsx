@@ -1,10 +1,11 @@
 import { eq } from "drizzle-orm";
-import { TriangleAlert } from "lucide-react";
+import { CircleCheck, TriangleAlert } from "lucide-react";
 import { db } from "@/db";
 import { companies, notificationRecipients, syncState } from "@/db/schema";
 import { AdminShell } from "@/components/admin-shell";
 import { Badge, Button, Card, Field, Input } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth/admin";
+import { generarReporteSalud } from "@/lib/health";
 import { getAdminAccessToken } from "@/lib/shopify/token";
 import {
   addRecipientAction,
@@ -35,8 +36,65 @@ export default async function AjustesPage() {
     where: eq(syncState.key, "reconciliation_checkpoint"),
   });
 
+  const salud = await generarReporteSalud();
+  const tonoSalud = { ok: "verde", aviso: "amarillo", critico: "rojo" } as const;
+
   return (
     <AdminShell active="/admin/ajustes" usuario={actor} title="Ajustes">
+      {/* Estado de la plataforma: lo mismo que vigila el cron de alertas */}
+      <Card className="mb-6 p-6">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h2 className="font-display text-base text-caramba-grafito">Estado de la plataforma</h2>
+            <p className="mt-1 text-sm text-caramba-grafito/55">
+              Revisión automática cada 6 horas. Si algo falla, te llega un correo.
+            </p>
+          </div>
+          <Badge tone={tonoSalud[salud.severidad]}>
+            {salud.severidad === "ok"
+              ? "Todo en orden"
+              : salud.severidad === "aviso"
+                ? "Con avisos"
+                : "Requiere atención"}
+          </Badge>
+        </div>
+        <ul className="mt-5 grid gap-2.5 sm:grid-cols-2">
+          {salud.chequeos.map((c) => (
+            <li
+              key={c.id}
+              className={`rounded-xl border px-4 py-3 ${
+                c.severidad === "critico"
+                  ? "border-caramba-rojo/25 bg-caramba-rojo-soft"
+                  : c.severidad === "aviso"
+                    ? "border-caramba-amarillo/30 bg-caramba-amarillo-soft"
+                    : "border-caramba-grafito/8"
+              }`}
+            >
+              <p
+                className={`flex items-center gap-2 text-sm font-semibold ${
+                  c.severidad === "critico"
+                    ? "text-caramba-rojo-texto"
+                    : c.severidad === "aviso"
+                      ? "text-caramba-amarillo-texto"
+                      : "text-caramba-grafito"
+                }`}
+              >
+                {c.severidad === "ok" ? (
+                  <CircleCheck className="size-4 shrink-0 text-caramba-verde-texto" strokeWidth={2} />
+                ) : (
+                  <TriangleAlert className="size-4 shrink-0" strokeWidth={2} />
+                )}
+                {c.titulo}
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-caramba-grafito/65">{c.detalle}</p>
+              {c.severidad !== "ok" && c.accion ? (
+                <p className="mt-1.5 text-[11px] text-caramba-grafito/50">→ {c.accion}</p>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      </Card>
+
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Notificaciones */}
         <Card className="space-y-5 p-6">

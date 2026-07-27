@@ -69,6 +69,12 @@ Los webhooks corren por Inngest si `INNGEST_EVENT_KEY` está definida; si no, **
 - **`src/proxy.ts`** (middleware de Next 16) exige cookie para todo `/admin/*` (salvo login/entrar), redirige con **303 explícito** (el default 307 re-POSTea) y conserva el deep-link en `?next=`.
 - **`requireAdmin()` fuerza el cambio de contraseña temporal** (`mustChangePassword`); solo `/admin/cuenta` pasa `permitirCambioPendiente`.
 
+**YA RESUELTO (27-jul-2026) — bloque "enterprise"**
+- ✅ **Monitoreo y alertas**: `/api/cron/health` cada 6 h revisa reconciliación, webhooks, pedidos con problema/estancados y configuración. **Manda correo SOLO si hay algo mal**, a los destinatarios globales de `/admin/ajustes` (si no hay ninguno, no hay alertas). El mismo reporte se ve en vivo en **Ajustes → Estado de la plataforma**. Lógica en `src/lib/health.ts`.
+- ✅ **Backups verificados**: Supabase respalda **a diario** (~03:55 UTC, 7 días de retención). ⚠️ **PITR desactivado** → un incidente a media tarde pierde lo del día. Activarlo antes de campañas grandes. Runbook completo: `docs/runbook-operacion.md`.
+- ✅ **Gestión individual de colaboradores** (P1.9): editar correo/RUT/nombre/cupo y eliminar, desde la tabla. Con guardas: no se puede eliminar a quien ya pidió, ni bajar el cupo por debajo de lo ya usado, ni duplicar correo/RUT en la campaña. Todo queda en `audit_log` con antes/después.
+- ✅ **Runbook de operación**: `docs/runbook-operacion.md` — qué hacer si el stock no cuadra, si un colaborador no recibe su código, cómo restaurar un backup, cómo sacar a alguien del panel.
+
 **P1 — robustez y escalabilidad**
 - **Entregabilidad**: sin webhook de rebotes/quejas de Resend ni lista de supresión (P1.2); invitaciones masivas sin batch ni control del límite del plan (P1.3, `resend.batch.send` + correr en Inngest para no topar el timeout de la server action).
 - **Migración a `app.caramba.cl`** (P1.4): `NEXT_PUBLIC_APP_URL` se **inlinea en el build** → cambiarla en Vercel exige **redeploy** (no basta editar la var). Orden: dominio+CNAME en Vercel → fijar var → `vercel deploy --prod` → validar que un magic link y un correo de pedido salgan con el host nuevo. No tocar el DNS raíz de caramba.cl.

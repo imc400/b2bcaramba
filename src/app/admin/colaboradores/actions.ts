@@ -1,10 +1,10 @@
 "use server";
 
 import ExcelJS from "exceljs";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, count, eq, isNull, ne, or, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { auditLog, campaigns, collaborators, companies } from "@/db/schema";
+import { auditLog, campaigns, collaborators, companies, orderItems, orders } from "@/db/schema";
 import { requireAdmin } from "@/lib/auth/admin";
 import { isValidRut, normalizeRut } from "@/lib/auth/rut";
 import { isCampaignOpen } from "@/lib/campaign";
@@ -158,10 +158,124 @@ export async function importCollaboratorsAction(
   };
 }
 
-export async function deleteCollaboratorAction(id: string): Promise<void> {
-  await requireAdmin();
+/**
+ * Elimina un colaborador. Se niega si ya pidió: sus pedidos son un registro
+ * histórico (y la FK es RESTRICT, así que igual fallaría, pero con un error
+ * feo). En ese caso lo correcto es dejarlo y, si hace falta, bajarle el cupo.
+ */
+export async function deleteCollaboratorAction(id: string): Promise<{ ok: boolean; error?: string }> {
+  const actor = await requireAdmin();
+
+  const [colab] = await db.select().from(collaborators).where(eq(collaborators.id, id)).limit(1);
+  if (!colab) return { ok: false, error: "Ese colaborador ya no existe." };
+
+  const [{ pedidos }] = await db
+    .select({ pedidos: count() })
+    .from(orders)
+    .where(eq(orders.collaboratorId, id));
+
+  if (Number(pedidos) > 0) {
+    return {
+      ok: false,
+      error: `${colab.name ?? colab.email ?? "Este colaborador"} ya tiene ${pedidos} pedido(s) y no se puede eliminar. Si no debe pedir más, déjale el cupo en 0.`,
+    };
+  }
+
   await db.delete(collaborators).where(eq(collaborators.id, id));
+  await db.insert(auditLog).values({
+    actorEmail: actor.email,
+    action: "collaborator_delete",
+    entity: "collaborator",
+    entityId: id,
+    meta: { email: colab.email, rut: colab.rut, name: colab.name },
+  });
   revalidatePath("/admin/colaboradores");
+  return { ok: true };
+}
+
+/**
+ * Corrige los datos de un colaborador. Sin esto, un correo mal tipeado en el
+ * Excel obligaba a re-importar y dejaba la fila errónea viva — recibiendo una
+ * invitación real a un desconocido.
+ */
+export async function updateCollaboratorAction(
+  id: string,
+  datos: { email: string; rut: string; name: string; quota: number },
+): Promise<{ ok: boolean; error?: string }> {
+  const actor = await requireAdmin();
+
+  const [colab] = await db.select().from(collaborators).where(eq(collaborators.id, id)).limit(1);
+  if (!colab) return { ok: false, error: "Ese colaborador ya no existe." };
+
+  const email = datos.email.trim().toLowerCase() || null;
+  const nombre = datos.name.trim() || null;
+  const rutCrudo = datos.rut.trim();
+  let rut: string | null = null;
+  if (rutCrudo) {
+    if (!isValidRut(rutCrudo)) return { ok: false, error: "El RUT no es válido." };
+    rut = normalizeRut(rutCrudo);
+  }
+
+  if (!email && !rut) {
+    return { ok: false, error: "Necesita correo o RUT: es su forma de entrar." };
+  }
+  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    return { ok: false, error: "El correo no tiene un formato válido." };
+  }
+
+  const cupo = Number(datos.quota);
+  if (!Number.isInteger(cupo) || cupo < 0 || cupo > 50) {
+    return { ok: false, error: "El cupo debe ser un número entre 0 y 50." };
+  }
+
+  // No dejar el cupo por debajo de lo que ya pidió: rompería la contabilidad.
+  const [{ usados }] = await db
+    .select({ usados: sql<number>`coalesce(sum(${orderItems.quantity}),0)::int` })
+    .from(orderItems)
+    .innerJoin(orders, eq(orders.id, orderItems.orderId))
+    .where(and(eq(orders.collaboratorId, id), sql`${orders.status} <> 'anulado'`));
+
+  if (cupo < Number(usados)) {
+    return { ok: false, error: `Ya eligió ${usados} regalo(s): el cupo no puede quedar por debajo.` };
+  }
+
+  // Unicidad dentro de la campaña (los índices únicos existen; damos el mensaje bueno).
+  const choques = await db
+    .select({ id: collaborators.id })
+    .from(collaborators)
+    .where(
+      and(
+        eq(collaborators.campaignId, colab.campaignId),
+        ne(collaborators.id, id),
+        email && rut
+          ? or(eq(collaborators.email, email), eq(collaborators.rut, rut))!
+          : email
+            ? eq(collaborators.email, email)
+            : eq(collaborators.rut, rut!),
+      ),
+    )
+    .limit(1);
+  if (choques.length > 0) {
+    return { ok: false, error: "Ya hay otro colaborador con ese correo o RUT en esta campaña." };
+  }
+
+  await db
+    .update(collaborators)
+    .set({ email, rut, name: nombre, quota: cupo })
+    .where(eq(collaborators.id, id));
+
+  await db.insert(auditLog).values({
+    actorEmail: actor.email,
+    action: "collaborator_update",
+    entity: "collaborator",
+    entityId: id,
+    meta: {
+      antes: { email: colab.email, rut: colab.rut, name: colab.name, quota: colab.quota },
+      despues: { email, rut, name: nombre, quota: cupo },
+    },
+  });
+  revalidatePath("/admin/colaboradores");
+  return { ok: true };
 }
 
 export type InviteResult = { enviadas: number; sinCorreo: number; error?: string };
