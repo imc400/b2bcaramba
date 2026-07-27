@@ -83,7 +83,9 @@ export default async function ColaboradoresPage({
           </div>
         </div>
 
-        <div className="overflow-x-auto rounded-2xl border border-caramba-grafito/8 bg-white shadow-sm">
+        {/* min-w-0: sin esto el hijo del grid crece con su contenido y la
+            tabla se corta a la derecha en vez de scrollear. */}
+        <div className="min-w-0 overflow-x-auto rounded-2xl border border-caramba-grafito/8 bg-white shadow-sm">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-caramba-grafito/8 text-left text-[11px] font-bold uppercase tracking-wider text-caramba-grafito/60">
