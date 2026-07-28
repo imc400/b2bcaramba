@@ -37,6 +37,11 @@ pnpm webhooks:list     # suscripciones activas
 - **`status` de producto puede ser `UNLISTED`**, no solo ACTIVE/ARCHIVED/DRAFT.
 - **Los webhooks declarados en `shopify.app.toml` no se materializaron.** Se registran con `pnpm webhooks:register` (idempotente, vía Admin API). Verificado: llegan en ~4 segundos.
 - **`client_credentials` no sirve**: la tienda no pertenece a la org de la app (`shop_not_permitted`). Se usa el OAuth de `/api/auth/shopify/install`. Shopify exige que `redirect_urls` compartan host con `application_url`.
+- **Shopify colapsa los scopes implícitos**: pides `read_products,read_inventory,write_inventory,read_locations` y el token responde `read_locations,read_products,write_inventory` — falta `read_inventory` porque `write_inventory` ya lo incluye. No es un error. Verificado leyendo inventario real con ese token.
+- **Los scopes de `/api/auth/shopify/install` DEBEN coincidir con los del `shopify.app.toml`.** Estuvieron desalineados (a la ruta le faltaba `read_locations`): un token emitido así nace sin el permiso que identifica la bodega y falla en silencio.
+- **El token vive en la base (`sync_state.shopify_admin_token`)**, no en Vercel. En Vercel quedó como variable `sensitive` = **no se puede leer de vuelta por ningún medio** (ni API ni `env pull`); si se pierde, la única salida es reemitirlo con el flujo OAuth. Tenerlo en la DB permite rotarlo sin redeploy.
+- **`webhooks:register` y `webhooks:list` leen `NEXT_PUBLIC_APP_URL` de `.env.local`** (localhost) y abortan. Correrlos así:
+  `SHOPIFY_ADMIN_ACCESS_TOKEN=<token> NEXT_PUBLIC_APP_URL=https://portal.caramba.cl pnpm webhooks:register`
 
 ## Arquitectura del espejo (3 capas)
 
@@ -77,7 +82,7 @@ Los webhooks corren por Inngest si `INNGEST_EVENT_KEY` está definida; si no, **
 
 **P1 — robustez y escalabilidad**
 - **Entregabilidad**: sin webhook de rebotes/quejas de Resend ni lista de supresión (P1.2); invitaciones masivas sin batch ni control del límite del plan (P1.3, `resend.batch.send` + correr en Inngest para no topar el timeout de la server action).
-- ✅ **Dominio propio `portal.caramba.cl`** (28-jul). CNAME `portal` → `fd2d3de285d36c9a.vercel-dns-016.com` en Cloudflare, **DNS only** (con la nube naranja Vercel no puede emitir el SSL). Certificado Let's Encrypt emitido y `NEXT_PUBLIC_APP_URL` actualizada + redeploy (se inlinea en el build: sin redeploy los correos mandan links viejos). `shopify.app.toml` apunta al host nuevo; los `*.vercel.app` quedan como redirect de respaldo. **Pendiente**: re-registrar los webhooks de Shopify al host nuevo — hoy apuntan a b2bcaramba.vercel.app, que sigue vivo, así que el espejo funciona; requiere `SHOPIFY_ADMIN_ACCESS_TOKEN` (está en Vercel, no en la DB) y correr `pnpm webhooks:register`.
+- ✅ **Dominio propio `portal.caramba.cl`** (28-jul). CNAME `portal` → `fd2d3de285d36c9a.vercel-dns-016.com` en Cloudflare, **DNS only** (con la nube naranja Vercel no puede emitir el SSL). Certificado Let's Encrypt emitido y `NEXT_PUBLIC_APP_URL` actualizada + redeploy (se inlinea en el build: sin redeploy los correos mandan links viejos). `shopify.app.toml` apunta al host nuevo; los `*.vercel.app` quedan como redirect de respaldo. Los **7 webhooks re-registrados** a `portal.caramba.cl` y verificados (llegan eventos nuevos posteriores al cambio).
 - **UX admin**: anular pedido es un clic irreversible sin confirmación y toca stock real (P1.8); no hay gestión individual de colaborador — editar cupo / corregir correo / eliminar (`deleteCollaboratorAction` existe pero está muerto) (P1.9).
 - **Paginación**: catálogo del microsite trunca en 60 pero anuncia el total real (P1.10); `/admin/pedidos` (200) y `/admin/colaboradores` (500) truncan en silencio y el total de "cupo usado" se calcula sobre las filas truncadas (P1.11); falta buscador en colaboradores.
 - **Handoff/ops** (P1.12–P1.18): documentar todas las env vars obligatorias (6 no están en `.env.example`), inventario de credenciales y cómo rotarlas, backups/restore de la DB, monitoreo/alertas, estado de Inngest, y runbooks (webhook caído, crear empresa, rotar secreto).
