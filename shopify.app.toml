@@ -8,7 +8,7 @@
 client_id = "9e9fce25701f75cbd5c207069264a379"
 name = "Caramba B2B"
 handle = "caramba-b2b"
-application_url = "https://b2bcaramba.vercel.app"
+application_url = "https://portal.caramba.cl"
 embedded = false
 
 [access_scopes]
@@ -20,9 +20,11 @@ use_legacy_install_flow = false
 
 [auth]
 redirect_urls = [
+  # El host oficial. Los .vercel.app quedan como respaldo durante la
+  # transición: si algún flujo viejo sigue vivo, no se rompe.
+  "https://portal.caramba.cl/api/auth/shopify/callback",
   "https://b2bcaramba.vercel.app/api/auth/shopify/callback",
   "https://caramba-b2b.vercel.app/api/auth/shopify/callback",
-  "https://app.caramba.cl/api/auth/shopify/callback",
 ]
 
 [webhooks]
@@ -41,11 +43,11 @@ api_version = "2026-07"
     "inventory_items/update",
     "inventory_items/delete",
   ]
-  uri = "https://b2bcaramba.vercel.app/api/webhooks/shopify"
+  uri = "https://portal.caramba.cl/api/webhooks/shopify"
 
   # Obligatorios por compliance de Shopify (GDPR). Respondemos 200 sin datos:
   # no almacenamos clientes de la tienda, solo colaboradores de empresas B2B.
   [webhooks.privacy_compliance]
-  customer_deletion_url = "https://b2bcaramba.vercel.app/api/webhooks/shopify/compliance"
-  customer_data_request_url = "https://b2bcaramba.vercel.app/api/webhooks/shopify/compliance"
-  shop_deletion_url = "https://b2bcaramba.vercel.app/api/webhooks/shopify/compliance"
+  customer_deletion_url = "https://portal.caramba.cl/api/webhooks/shopify/compliance"
+  customer_data_request_url = "https://portal.caramba.cl/api/webhooks/shopify/compliance"
+  shop_deletion_url = "https://portal.caramba.cl/api/webhooks/shopify/compliance"
