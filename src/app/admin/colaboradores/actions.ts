@@ -62,17 +62,22 @@ export async function importarColaboradores({
   if (!campaign) return { status: "error", message: "Campaña no existe." };
 
   // --- Parsear filas -------------------------------------------------------
+  // Se decide por el CONTENIDO, no por la extensión: los Excel que mandan las
+  // empresas vienen renombrados a mano con muchísima frecuencia (un .xls
+  // guardado como .xlsx, o al revés) y confiar en el nombre hace fallar un
+  // archivo que en realidad es válido.
+  //   .xlsx → ZIP, empieza con "PK"        (50 4B)
+  //   .xls  → OLE2, empieza con D0 CF 11 E0
   let rows: string[][];
   try {
-    if (file.name.toLowerCase().endsWith(".csv")) {
-      const text = await file.text();
-      rows = text
-        .split(/\r?\n/)
-        .filter((l) => l.trim())
-        .map((l) => l.split(/[;,]/).map((c) => c.trim().replace(/^"|"$/g, "")));
-    } else {
+    const buffer = await file.arrayBuffer();
+    const firma = new Uint8Array(buffer.slice(0, 4));
+    const esZip = firma[0] === 0x50 && firma[1] === 0x4b; // xlsx
+    const esOle = firma[0] === 0xd0 && firma[1] === 0xcf && firma[2] === 0x11 && firma[3] === 0xe0; // xls
+
+    if (esZip) {
       const workbook = new ExcelJS.Workbook();
-      await workbook.xlsx.load(await file.arrayBuffer());
+      await workbook.xlsx.load(buffer);
       const sheet = workbook.worksheets[0];
       rows = [];
       sheet.eachRow((row) => {
@@ -82,9 +87,36 @@ export async function importarColaboradores({
         });
         rows.push(values);
       });
+    } else if (esOle) {
+      // ExcelJS no lee el formato binario antiguo; SheetJS sí.
+      const XLSX = await import("xlsx");
+      const wb = XLSX.read(buffer, { type: "array" });
+      const hoja = wb.Sheets[wb.SheetNames[0]];
+      rows = (XLSX.utils.sheet_to_json(hoja, { header: 1, blankrows: false, raw: false }) as unknown[][]).map(
+        (fila) => fila.map((c) => String(c ?? "").trim()),
+      );
+    } else if (/\.xlsx?$/i.test(file.name)) {
+      // Se llama Excel pero no lo es: archivo corrupto o a medio descargar.
+      // Sin este caso caía al lector de texto y devolvía "no tiene filas de
+      // datos", que despista a quien solo quiere subir su lista.
+      return {
+        status: "error",
+        message:
+          "Ese archivo parece dañado: tiene nombre de Excel pero no se puede abrir. Ábrelo en Excel y vuelve a guardarlo, o descárgalo de nuevo.",
+      };
+    } else {
+      // Texto plano: CSV o separado por punto y coma (lo que exporta Excel en Chile).
+      const text = new TextDecoder("utf-8").decode(buffer);
+      rows = text
+        .split(/\r?\n/)
+        .filter((l) => l.trim())
+        .map((l) => l.split(/[;,\t]/).map((c) => c.trim().replace(/^"|"$/g, "")));
     }
   } catch {
-    return { status: "error", message: "No se pudo leer el archivo. ¿Es un .xlsx o .csv válido?" };
+    return {
+      status: "error",
+      message: "No se pudo leer el archivo. Acepta Excel (.xlsx o .xls) y CSV.",
+    };
   }
 
   if (rows.length < 2) {

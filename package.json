@@ -12,7 +12,7 @@
     "db:generate": "drizzle-kit generate",
     "sync": "tsx scripts/sync-shopify.ts",
     "shopify:deploy": "shopify app deploy",
-    "test": "tsx --tsconfig tsconfig.scripts.json scripts/test-bulk-parse.ts && tsx --tsconfig tsconfig.scripts.json scripts/test-campaign.ts && tsx --tsconfig tsconfig.scripts.json scripts/test-admin-invites.ts && tsx --tsconfig tsconfig.scripts.json scripts/test-password.ts && tsx --tsconfig tsconfig.scripts.json scripts/test-catalog-types.ts && tsx --tsconfig tsconfig.scripts.json scripts/test-import-escala.ts && tsx --tsconfig tsconfig.scripts.json scripts/test-order-authz.ts",
+    "test": "tsx --tsconfig tsconfig.scripts.json scripts/test-bulk-parse.ts && tsx --tsconfig tsconfig.scripts.json scripts/test-campaign.ts && tsx --tsconfig tsconfig.scripts.json scripts/test-admin-invites.ts && tsx --tsconfig tsconfig.scripts.json scripts/test-password.ts && tsx --tsconfig tsconfig.scripts.json scripts/test-catalog-types.ts && tsx --tsconfig tsconfig.scripts.json scripts/test-import-escala.ts && tsx --tsconfig tsconfig.scripts.json scripts/test-import-formatos.ts && tsx --tsconfig tsconfig.scripts.json scripts/test-order-authz.ts",
     "webhooks:register": "tsx --tsconfig tsconfig.scripts.json scripts/register-webhooks.ts",
     "webhooks:list": "tsx --tsconfig tsconfig.scripts.json scripts/register-webhooks.ts --list",
     "verify:shopify": "tsx --tsconfig tsconfig.scripts.json scripts/verify-shopify-sync.ts",
@@ -32,6 +32,7 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "resend": "^6.17.1",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "zod": "^4.4.3"
   },
   "devDependencies": {

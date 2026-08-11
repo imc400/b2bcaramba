@@ -52,12 +52,12 @@ export function ImportForm({
             ))}
           </select>
         </Field>
-        <Field label="Archivo (.xlsx o .csv)" htmlFor="file">
+        <Field label="Archivo (.xlsx, .xls o .csv)" htmlFor="file">
           <input
             id="file"
             name="file"
             type="file"
-            accept=".xlsx,.csv"
+            accept=".xlsx,.xls,.csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             required
             className="w-full rounded-xl border border-dashed border-caramba-grafito/25 bg-caramba-crema px-4 py-6 text-sm text-caramba-grafito/60 file:mr-3 file:rounded-full file:border-0 file:bg-caramba-grafito file:px-4 file:py-1.5 file:text-xs file:font-semibold file:text-white"
           />
