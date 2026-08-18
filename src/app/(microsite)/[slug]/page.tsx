@@ -5,7 +5,8 @@ import { campaigns, companies } from "@/db/schema";
 import { getMicrositeSession } from "@/lib/auth/session";
 import { isCampaignOpen } from "@/lib/campaign";
 import { AccessForm } from "./access-form";
-import { accentText, BannerDecoration, ToyIcon } from "@/components/brand";
+import { ToyIcon } from "@/components/brand";
+import { CampaignHero } from "@/components/campaign-hero";
 
 export default async function AccessPage({
   params,
@@ -33,31 +34,19 @@ export default async function AccessPage({
   }
 
   const accent = ctx.campaign.theme?.accentColor ?? "#8CBEA3";
-  const textColor = accentText(accent);
 
   return (
     <main className="mx-auto max-w-6xl px-4 sm:px-6">
-      {/* Banner de campaña */}
-      <section
-        className="relative mt-6 overflow-hidden rounded-3xl px-8 py-12 sm:px-12"
-        style={{
-          background: `linear-gradient(135deg, ${accent} 0%, ${accent}cc 100%)`,
-          color: textColor,
-        }}
-      >
-        <BannerDecoration icon="rocking-horse" />
-        <div className="relative">
-          <p className="text-xs font-bold uppercase tracking-[0.2em] opacity-80">
-            {ctx.campaign.name} · beneficio {ctx.company.name}
-          </p>
-          <h1 className="mt-3 max-w-xl text-3xl leading-tight sm:text-4xl">
-            {ctx.campaign.bannerTitle}
-          </h1>
-          {ctx.campaign.bannerSubtitle ? (
-            <p className="mt-3 max-w-lg opacity-85">{ctx.campaign.bannerSubtitle}</p>
-          ) : null}
-        </div>
-      </section>
+      {/* Banner de campaña (con foto de fondo si la campaña la definió) */}
+      <CampaignHero
+        className="mt-6"
+        kicker={`${ctx.campaign.name} · beneficio ${ctx.company.name}`}
+        title={ctx.campaign.bannerTitle}
+        subtitle={ctx.campaign.bannerSubtitle}
+        accentColor={accent}
+        bannerImageUrl={ctx.campaign.bannerImageUrl}
+        bannerOverlay={ctx.campaign.theme?.bannerOverlay}
+      />
 
       {/* Acceso. `relative z-10`: la tarjeta se solapa con el banner (-mt-8) y
           el banner es position:relative — sin esto, el banner pinta ENCIMA y

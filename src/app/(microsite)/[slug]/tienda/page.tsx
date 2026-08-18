@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { accentText, BannerDecoration } from "@/components/brand";
+import { CampaignHero } from "@/components/campaign-hero";
 import { getMicrositeSession } from "@/lib/auth/session";
 import { getCampaignCatalog } from "@/lib/catalog";
 import { getRemainingQuota } from "@/lib/orders";
@@ -56,31 +56,22 @@ export default async function TiendaPage({
   };
 
   const accent = session.campaign.theme?.accentColor ?? "#8CBEA3";
-  const textColor = accentText(accent);
   const firstName = (session.collaborator.name ?? "").split(" ")[0];
 
   return (
     <SelectionProvider campaignId={session.campaign.id} quota={remaining}>
       <main className="mx-auto max-w-6xl px-4 pb-32 sm:px-6">
-        {/* Banner compacto */}
-        <section
-          className="relative mt-6 overflow-hidden rounded-3xl px-8 py-8"
-          style={{
-            background: `linear-gradient(135deg, ${accent} 0%, ${accent}cc 100%)`,
-            color: textColor,
-          }}
-        >
-          <BannerDecoration icon="beach-ball" />
-          <div className="relative">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] opacity-80">
-              {session.campaign.name} · beneficio {session.company.name}
-            </p>
-            <h1 className="mt-2 text-2xl sm:text-3xl">
-              {firstName ? `¡Hola ${firstName}! ` : ""}
-              {session.campaign.bannerTitle}
-            </h1>
-          </div>
-        </section>
+        {/* Banner compacto (con foto de fondo si la campaña la definió) */}
+        <CampaignHero
+          className="mt-6"
+          compact
+          decorationIcon="beach-ball"
+          kicker={`${session.campaign.name} · beneficio ${session.company.name}`}
+          title={`${firstName ? `¡Hola ${firstName}! ` : ""}${session.campaign.bannerTitle}`}
+          accentColor={accent}
+          bannerImageUrl={session.campaign.bannerImageUrl}
+          bannerOverlay={session.campaign.theme?.bannerOverlay}
+        />
 
         {/* Búsqueda + filtros */}
         <section className="sticky top-16 z-10 -mx-4 mt-4 border-b border-caramba-grafito/8 bg-white/95 px-4 py-3 shadow-[0_8px_16px_-14px_rgba(40,40,40,0.25)] backdrop-blur sm:-mx-6 sm:px-6">
@@ -100,7 +91,7 @@ export default async function TiendaPage({
               slug={slug}
               param={AGE_PARAM}
               label="Edad"
-              options={facets.ages.map((a) => a.tag)}
+              options={facets.ages.map((a) => a.range)}
               selected={selectedAges}
               current={sp}
             />

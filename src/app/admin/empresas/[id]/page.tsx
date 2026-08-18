@@ -57,6 +57,8 @@ export default async function EditarEmpresaPage({
           campaignName: campaign?.name ?? `Navidad ${new Date().getFullYear()}`,
           bannerTitle: campaign?.bannerTitle ?? "",
           bannerSubtitle: campaign?.bannerSubtitle ?? "",
+          bannerImageUrl: campaign?.bannerImageUrl ?? "",
+          bannerOverlay: campaign?.theme?.bannerOverlay ?? 0.35,
           accentColor: campaign?.theme?.accentColor ?? "#8CBEA3",
           endsAt: campaign?.endsAt ? campaign.endsAt.toISOString().slice(0, 10) : "",
           defaultQuota: campaign?.defaultQuota ?? 1,

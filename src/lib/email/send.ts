@@ -262,6 +262,46 @@ export function orderConfirmationHtml(o: {
   </div>`;
 }
 
+/**
+ * Aviso al colaborador cuando su pedido pasa a "despachado". Cumple la promesa
+ * del correo de confirmación ("te avisaremos cuando vaya en camino").
+ * Sin precios: el colaborador nunca los ve.
+ */
+export function orderShippedHtml(o: {
+  code: string;
+  collaboratorName: string;
+  recipientName: string;
+  addressLine: string;
+  comuna: string;
+  region: string | null;
+  items: { title: string; variantTitle: string | null; quantity: number }[];
+}): string {
+  const list = o.items
+    .map(
+      (i) =>
+        `<li>${esc(i.title)}${
+          i.variantTitle && i.variantTitle !== "Default Title" ? ` · ${esc(i.variantTitle)}` : ""
+        } ×${i.quantity}</li>`,
+    )
+    .join("");
+  return `
+  <div style="font-family:system-ui,-apple-system,sans-serif;max-width:480px;margin:auto;border:1px solid #eee;border-radius:16px;overflow:hidden">
+    ${brandHeader}
+    <div style="padding:8px 40px 40px">
+      <h1 style="font-size:20px;color:#282828">¡Tu pedido va en camino!</h1>
+      <p style="color:#555;line-height:1.6">Hola ${esc(o.collaboratorName)}, tu pedido <b>${esc(o.code)}</b> ya fue despachado:</p>
+      <ul style="color:#555;line-height:1.8">${list}</ul>
+      <p style="color:#555;line-height:1.6">
+        <b>Dirección de entrega:</b><br/>
+        ${esc(o.recipientName)}<br/>
+        ${esc(o.addressLine)}, ${esc(o.comuna)}${o.region ? `, ${esc(o.region)}` : ""}
+      </p>
+      <p style="color:#555">¡Que lo disfrutes! La vida es para jugar.</p>
+    </div>
+    ${brandFooter}
+  </div>`;
+}
+
 /** Alerta de salud de la plataforma (la envía el cron de monitoreo). */
 export function healthAlertHtml(o: {
   severidad: "aviso" | "critico";

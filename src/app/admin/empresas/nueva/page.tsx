@@ -16,6 +16,8 @@ export default async function NuevaEmpresaPage() {
           campaignName: `Navidad ${new Date().getFullYear()}`,
           bannerTitle: "Elige el regalo de Navidad para tus hijos",
           bannerSubtitle: "",
+          bannerImageUrl: "",
+          bannerOverlay: 0.35,
           accentColor: "#8CBEA3",
           endsAt: "",
           defaultQuota: 1,

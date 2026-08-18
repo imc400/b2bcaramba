@@ -26,6 +26,15 @@ const upsertSchema = z.object({
   campaignName: z.string().min(2).max(80),
   bannerTitle: z.string().min(3).max(120),
   bannerSubtitle: z.string().max(160).optional(),
+  // URL pública devuelta por /api/admin/upload (Supabase Storage). Solo se
+  // acepta https: termina en un url() de CSS y en un <img> del microsite.
+  bannerImageUrl: z
+    .string()
+    .max(600)
+    .refine((v) => v === "" || v.startsWith("https://"), "La imagen del banner debe ser una URL https")
+    .optional(),
+  // Oscurecido de la imagen del banner (0–0.7); viaja como string del form
+  bannerOverlay: z.coerce.number().min(0).max(0.7).optional(),
   accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   endsAt: z.string().optional(),
   defaultQuota: z.coerce.number().int().min(1).max(10),
@@ -106,7 +115,8 @@ export async function upsertCompanyAction(
     status: d.status,
     bannerTitle: d.bannerTitle,
     bannerSubtitle: d.bannerSubtitle || null,
-    theme: { accentColor: d.accentColor },
+    bannerImageUrl: d.bannerImageUrl || null,
+    theme: { accentColor: d.accentColor, bannerOverlay: d.bannerOverlay ?? 0.35 },
     endsAt: d.endsAt ? endOfDayInChile(d.endsAt) : null,
     catalogFilter,
     defaultQuota: d.defaultQuota,

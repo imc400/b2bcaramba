@@ -99,6 +99,13 @@ export default async function PedidosPage({
     .from(companies)
     .orderBy(companies.name);
 
+  // El export respeta los filtros vigentes de la página.
+  const exportQuery = new URLSearchParams({
+    ...(empresa ? { empresa } : {}),
+    ...(estado ? { estado } : {}),
+    ...(q ? { q } : {}),
+  }).toString();
+
   return (
     <AdminShell
       active="/admin/pedidos"
@@ -106,9 +113,8 @@ export default async function PedidosPage({
       title="Pedidos"
       actions={
         // Descarga de archivo servida por route handler — no es una página
-        // eslint-disable-next-line @next/next/no-html-link-for-pages
         <a
-          href="/admin/pedidos/export"
+          href={`/admin/pedidos/export${exportQuery ? `?${exportQuery}` : ""}`}
           className="inline-flex items-center gap-2 rounded-full bg-caramba-verde px-4 py-2 text-sm font-semibold text-white hover:bg-[#7bab90]"
         >
           <Download className="size-4" strokeWidth={2} />
@@ -215,7 +221,7 @@ export default async function PedidosPage({
                   {r.order.createdAt.toLocaleDateString("es-CL", { day: "2-digit", month: "short" })}
                 </td>
                 <td className="px-5 py-3">
-                  <StatusSelect orderId={r.order.id} current={r.order.status} />
+                  <StatusSelect orderId={r.order.id} code={r.order.code} current={r.order.status} />
                 </td>
               </tr>
             ))}

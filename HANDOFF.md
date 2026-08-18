@@ -91,6 +91,30 @@ Los webhooks corren por Inngest si `INNGEST_EVENT_KEY` está definida; si no, **
 **P2 — pulido y deuda de mantención** (18 hallazgos; los notables)
 Reply-To explícito aunque hoy From=pedidos@ ya recibe respuestas (P2.1); `shopify.app.toml` apunta al host viejo (P2.2/P2.3); `SESSION_SECRET` declarada pero sin uso (P2.6); canje de OTP sin rate-limit por IP, solo 5 intentos/código (P2.7); restock local no idempotente ante doble anulación (P2.9); `available>=1` ignora `safetyStock` en el lock (P2.11); sin error/not-found/loading boundaries (P2.12); "reenviar código" prometido en el copy pero inexistente (P2.13); carrito en campaña cerrada solo falla al confirmar (P2.14); estados vacíos faltantes; README desactualizado. Además deuda previa: estados de pedido duplicados, "cupo usado" en 3 lugares, `loadOrderBundle` reimplementado, tokens de color hardcodeados.
 
+## Catálogo: metacampos de edad (18-ago-2026)
+
+Los filtros del microsite se alimentan así — **la clienta mantiene METACAMPOS, no etiquetas**:
+
+- **Categoría** = `productType` (el "Tipo" de Shopify). Siempre fue así; correcto.
+- **Edad (filtro)** = metacampo `custom.edad_para_colecciones` (lista; un producto puede
+  tener varios tramos) → columna `products.age_ranges` (text[], GIN). Verificado en sync
+  real: 3.963/3.969 productos activos lo tienen.
+- **Edad recomendada (solo informativa, chip en tarjeta y ficha)** = metacampo
+  `custom.age-group` → metaobjeto → texto en `products.recommended_age`. **Requiere el
+  scope `read_metaobjects`**: hasta reautorizar en `/api/auth/shopify/install`, la
+  resolución falla tolerante y la columna queda null (la UI simplemente no muestra chip).
+- Las etiquetas de edad ("2-4 años") ya NO participan en nada.
+
+## Imágenes (logos y banners) — Supabase Storage
+
+Bucket público `publico` en el MISMO proyecto Supabase. Subida vía `/api/admin/upload`
+(magic bytes, 4 MB máx — el body de Vercel corta en 4.5 MB; SVG solo para logos).
+Env: `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (en Vercel prod y .env.local; se
+regeneran con `pnpm storage:setup`). El banner de campaña (imagen + oscurecido en
+`theme.bannerOverlay`) se edita con vista previa en vivo (`CampaignHero`, compartido
+entre panel y microsite). Medidas recomendadas: **2400 × 800 px (3:1)**. Archivos
+huérfanos (subida sin guardar) son posibles y triviales; no hay GC.
+
 ## Acceso al panel
 
 Acceso primario por **correo + contraseña** en `/admin/login` (no depende de Resend). Sesiones en `admin_sessions`, revocables. El **magic link** por correo queda como alternativa ("¿Olvidaste tu contraseña?").
@@ -112,6 +136,8 @@ pnpm db:migrate             # con DIRECT_DATABASE_URL apuntando a la DB destino
 pnpm migrate:supabase       # migra producción vía Management API (Vercel ya no
                             # deja leer sus variables sensibles, así que no
                             # tenemos la contraseña de la DB a mano)
+pnpm storage:setup          # provisiona Supabase Storage (service key + bucket "publico");
+                            # necesita SUPABASE_ACCESS_TOKEN (sbp_...) en el entorno
 pnpm shopify:deploy         # publica shopify.app.toml
 vercel deploy --prod --yes
 ```

@@ -21,6 +21,11 @@ export const PRODUCT_SYNC_QUERY = /* GraphQL */ `
       tags
       status
       updatedAt
+      # Metacampos de edad de la clienta. edad_para_colecciones es el filtro
+      # (JSON array de tramos); age-group referencia un metaobjeto (GID) que
+      # se resuelve aparte con resolveMetaobjectDisplayNames.
+      edadColecciones: metafield(namespace: "custom", key: "edad_para_colecciones") { value }
+      ageGroup: metafield(namespace: "custom", key: "age-group") { value }
       featuredMedia {
         ... on MediaImage {
           image { url altText width height }
@@ -82,6 +87,10 @@ export const BULK_CATALOG_QUERY = /* GraphQL */ `
           tags
           status
           updatedAt
+          # En el JSONL los objetos anidados no-conexión vienen inline en la
+          # misma línea del producto: {"edadColecciones":{"value":"[…]"}, …}
+          edadColecciones: metafield(namespace: "custom", key: "edad_para_colecciones") { value }
+          ageGroup: metafield(namespace: "custom", key: "age-group") { value }
           featuredMedia {
             ... on MediaImage { image { url altText width height } }
           }
@@ -177,6 +186,64 @@ export async function getBulkOperationStatus(): Promise<{
     }
   `);
   return data.currentBulkOperation;
+}
+
+// ---------------------------------------------------------------------------
+// Metaobjetos: resolución de custom.age-group ("Edad recomendada")
+// ---------------------------------------------------------------------------
+
+/**
+ * Resuelve GIDs de metaobjetos a su texto visible (displayName; si viniera
+ * vacío, el primer field con valor). Se llama UNA vez por sync con los GIDs
+ * distintos, nunca por producto.
+ *
+ * Tolerante a permisos: hoy la app no tiene el scope read_metaobjects y
+ * Shopify rechaza la query. En ese caso se loguea claro y se devuelve un mapa
+ * vacío — el sync sigue y recommended_age queda null hasta la reautorización.
+ */
+export async function resolveMetaobjectDisplayNames(
+  gids: string[],
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  const ids = [...new Set(gids)].filter((g) => g.startsWith("gid://shopify/Metaobject/"));
+  if (ids.length === 0) return map;
+
+  try {
+    const data = await shopifyAdmin<{
+      nodes: ({
+        id: string;
+        displayName: string | null;
+        fields: { key: string; value: string | null }[];
+      } | null)[];
+    }>(
+      /* GraphQL */ `
+        query MetaobjectNames($ids: [ID!]!) {
+          nodes(ids: $ids) {
+            ... on Metaobject {
+              id
+              displayName
+              fields { key value }
+            }
+          }
+        }
+      `,
+      { ids },
+    );
+    for (const node of data.nodes) {
+      if (!node?.id) continue;
+      const texto =
+        node.displayName?.trim() || node.fields.find((f) => f.value?.trim())?.value?.trim();
+      if (texto) map.set(node.id, texto);
+    }
+  } catch (err) {
+    console.warn(
+      "[sync] No se pudieron resolver los metaobjetos de edad recomendada " +
+        "(¿falta el scope read_metaobjects? Reinstalar la app en /api/auth/shopify/install). " +
+        "El sync continúa con recommended_age = null. Detalle: " +
+        (err instanceof Error ? err.message : String(err)),
+    );
+  }
+  return map;
 }
 
 // ---------------------------------------------------------------------------

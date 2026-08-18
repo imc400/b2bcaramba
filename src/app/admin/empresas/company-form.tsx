@@ -1,9 +1,10 @@
 "use client";
 
-import { Plus, Search, X } from "lucide-react";
+import { ImagePlus, Loader2, Plus, Search, X } from "lucide-react";
 import Image from "next/image";
 import { useActionState, useEffect, useMemo, useState } from "react";
-import { Button, Card, Field, Input } from "@/components/ui";
+import { CampaignHero } from "@/components/campaign-hero";
+import { Button, Card, Field, Input, Label } from "@/components/ui";
 import {
   previewFilterAction,
   searchProductsAction,
@@ -30,6 +31,9 @@ export type CompanyFormInitial = {
   campaignName: string;
   bannerTitle: string;
   bannerSubtitle: string;
+  bannerImageUrl: string;
+  /** Opacidad 0–0.7 de la capa oscura sobre la imagen del banner */
+  bannerOverlay: number;
   accentColor: string;
   endsAt: string;
   defaultQuota: number;
@@ -53,6 +57,7 @@ export function CompanyForm({ initial, appUrl }: { initial: CompanyFormInitial; 
   const [slug, setSlug] = useState(initial.slug);
   const [slugTouched, setSlugTouched] = useState(Boolean(initial.slug));
   const [bannerTitle, setBannerTitle] = useState(initial.bannerTitle);
+  const [bannerSubtitle, setBannerSubtitle] = useState(initial.bannerSubtitle);
   const [campaignName, setCampaignName] = useState(initial.campaignName);
   const [accent, setAccent] = useState(initial.accentColor);
   const [priceMin, setPriceMin] = useState(initial.priceMinClp);
@@ -62,6 +67,19 @@ export function CompanyForm({ initial, appUrl }: { initial: CompanyFormInitial; 
   const [safetyStock, setSafetyStock] = useState(initial.safetyStock);
   const [included, setIncluded] = useState<ProductRef[]>(initial.includedProducts);
   const [excluded, setExcluded] = useState<ProductRef[]>(initial.excludedProducts);
+
+  // Imágenes subidas como archivo (logo y banner). El preview local (blob:)
+  // aparece al tiro; la URL definitiva llega al terminar la subida y es la
+  // que viaja en los hidden inputs al guardar.
+  const [logoUrl, setLogoUrl] = useState(initial.logoUrl);
+  const [logoPreview, setLogoPreview] = useState(initial.logoUrl);
+  const [logoSubiendo, setLogoSubiendo] = useState(false);
+  const [logoError, setLogoError] = useState<string | null>(null);
+  const [bannerImageUrl, setBannerImageUrl] = useState(initial.bannerImageUrl);
+  const [bannerPreview, setBannerPreview] = useState(initial.bannerImageUrl);
+  const [bannerSubiendo, setBannerSubiendo] = useState(false);
+  const [bannerError, setBannerError] = useState<string | null>(null);
+  const [bannerOverlay, setBannerOverlay] = useState(initial.bannerOverlay);
 
   const [preview, setPreview] = useState<{
     total: number;
@@ -168,6 +186,50 @@ export function CompanyForm({ initial, appUrl }: { initial: CompanyFormInitial; 
     setIncluded((prev) => prev.filter((i) => i.shopifyId !== p.shopifyId));
   }
 
+  /** Sube el archivo a /api/admin/upload y devuelve la URL pública definitiva. */
+  async function subirImagen(file: File, tipo: "logo" | "banner"): Promise<string> {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("tipo", tipo);
+    if (initial.companyId) fd.append("empresaId", initial.companyId);
+    const res = await fetch("/api/admin/upload", { method: "POST", body: fd });
+    const data = (await res.json().catch(() => null)) as { url?: string; error?: string } | null;
+    if (!res.ok || !data?.url) {
+      throw new Error(data?.error ?? "No se pudo subir la imagen. Revisa tu conexión.");
+    }
+    return data.url;
+  }
+
+  async function handleLogoFile(file: File | undefined) {
+    if (!file) return;
+    setLogoError(null);
+    setLogoPreview(URL.createObjectURL(file)); // preview inmediato mientras sube
+    setLogoSubiendo(true);
+    try {
+      setLogoUrl(await subirImagen(file, "logo"));
+    } catch (e) {
+      setLogoError(e instanceof Error ? e.message : "No se pudo subir la imagen.");
+      setLogoPreview(logoUrl); // volver al logo anterior (o a ninguno)
+    } finally {
+      setLogoSubiendo(false);
+    }
+  }
+
+  async function handleBannerFile(file: File | undefined) {
+    if (!file) return;
+    setBannerError(null);
+    setBannerPreview(URL.createObjectURL(file)); // preview inmediato mientras sube
+    setBannerSubiendo(true);
+    try {
+      setBannerImageUrl(await subirImagen(file, "banner"));
+    } catch (e) {
+      setBannerError(e instanceof Error ? e.message : "No se pudo subir la imagen.");
+      setBannerPreview(bannerImageUrl); // volver a la imagen anterior (o a ninguna)
+    } finally {
+      setBannerSubiendo(false);
+    }
+  }
+
   return (
     <form action={submit} className="grid gap-6 lg:grid-cols-[1fr_400px]">
       {initial.companyId ? <input type="hidden" name="companyId" value={initial.companyId} /> : null}
@@ -175,6 +237,9 @@ export function CompanyForm({ initial, appUrl }: { initial: CompanyFormInitial; 
         <input type="hidden" name="campaignId" value={initial.campaignId} />
       ) : null}
       <input type="hidden" name="accentColor" value={accent} />
+      <input type="hidden" name="logoUrl" value={logoUrl} />
+      <input type="hidden" name="bannerImageUrl" value={bannerImageUrl} />
+      <input type="hidden" name="bannerOverlay" value={String(bannerOverlay)} />
       <input
         type="hidden"
         name="includeProductIds"
@@ -214,18 +279,57 @@ export function CompanyForm({ initial, appUrl }: { initial: CompanyFormInitial; 
               />
             </Field>
           </div>
-          <Field
-            label="Logo de la empresa (URL)"
-            htmlFor="logoUrl"
-            hint="Opcional. Si está vacío se muestra el nombre en un chip."
-          >
-            <Input
-              id="logoUrl"
-              name="logoUrl"
-              placeholder="https://…/logo.png"
-              defaultValue={initial.logoUrl}
-            />
-          </Field>
+          <div>
+            <Label>Logo de la empresa</Label>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex h-16 w-36 items-center justify-center overflow-hidden rounded-xl border border-caramba-grafito/15 bg-caramba-crema">
+                {logoSubiendo ? (
+                  <Loader2 className="size-5 animate-spin text-caramba-grafito/45" />
+                ) : logoPreview ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={logoPreview}
+                    alt="Logo de la empresa"
+                    className="max-h-12 w-auto max-w-32 object-contain"
+                  />
+                ) : (
+                  <span className="text-[11px] text-caramba-grafito/40">Sin logo</span>
+                )}
+              </div>
+              <label className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-full border border-caramba-grafito/15 bg-white px-5 py-2.5 text-sm font-semibold text-caramba-grafito transition-colors hover:border-caramba-grafito/40">
+                {logoPreview ? "Cambiar logo" : "Subir logo"}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                  className="sr-only"
+                  disabled={logoSubiendo}
+                  onChange={(e) => {
+                    handleLogoFile(e.target.files?.[0]);
+                    e.target.value = ""; // permite volver a elegir el mismo archivo
+                  }}
+                />
+              </label>
+              {logoPreview && !logoSubiendo ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLogoUrl("");
+                    setLogoPreview("");
+                    setLogoError(null);
+                  }}
+                  className="inline-flex min-h-11 items-center gap-1.5 rounded-full px-4 py-2.5 text-sm font-semibold text-caramba-grafito/60 transition-colors hover:bg-caramba-crema hover:text-caramba-grafito"
+                >
+                  <X className="size-4" strokeWidth={2.5} />
+                  Quitar
+                </button>
+              ) : null}
+            </div>
+            <p className="mt-1 text-xs text-caramba-grafito/65">
+              Opcional. PNG, JPG, WebP o SVG, máx. 4 MB. Si no hay logo se muestra el nombre de la
+              empresa en un chip.
+            </p>
+            {logoError ? <p className="mt-1 text-xs font-medium text-[#a34433]">{logoError}</p> : null}
+          </div>
         </Card>
 
         <Card className="space-y-5 p-6">
@@ -254,8 +358,91 @@ export function CompanyForm({ initial, appUrl }: { initial: CompanyFormInitial; 
             />
           </Field>
           <Field label="Subtítulo del banner (opcional)" htmlFor="bannerSubtitle">
-            <Input id="bannerSubtitle" name="bannerSubtitle" defaultValue={initial.bannerSubtitle} />
+            <Input
+              id="bannerSubtitle"
+              name="bannerSubtitle"
+              value={bannerSubtitle}
+              onChange={(e) => setBannerSubtitle(e.target.value)}
+            />
           </Field>
+          <div>
+            <Label>Imagen de fondo del banner</Label>
+            {bannerPreview ? (
+              <div className="mb-3 overflow-hidden rounded-xl border border-caramba-grafito/15">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={bannerPreview}
+                  alt="Imagen de fondo del banner"
+                  className="h-28 w-full object-cover object-center"
+                />
+              </div>
+            ) : null}
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-full border border-caramba-grafito/15 bg-white px-5 py-2.5 text-sm font-semibold text-caramba-grafito transition-colors hover:border-caramba-grafito/40">
+                {bannerSubiendo ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <ImagePlus className="size-4" strokeWidth={2} />
+                )}
+                {bannerPreview ? "Cambiar imagen" : "Subir imagen de fondo"}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="sr-only"
+                  disabled={bannerSubiendo}
+                  onChange={(e) => {
+                    handleBannerFile(e.target.files?.[0]);
+                    e.target.value = ""; // permite volver a elegir el mismo archivo
+                  }}
+                />
+              </label>
+              {bannerPreview && !bannerSubiendo ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBannerImageUrl("");
+                    setBannerPreview("");
+                    setBannerError(null);
+                  }}
+                  className="inline-flex min-h-11 items-center gap-1.5 rounded-full px-4 py-2.5 text-sm font-semibold text-caramba-grafito/60 transition-colors hover:bg-caramba-crema hover:text-caramba-grafito"
+                >
+                  <X className="size-4" strokeWidth={2.5} />
+                  Quitar
+                </button>
+              ) : null}
+            </div>
+            <p className="mt-1 text-xs text-caramba-grafito/65">
+              Opcional. Recomendado: 2400 × 800 px, JPG o PNG, máx. 4 MB. La foto se recorta para
+              llenar el banner: deja lo importante al centro (en celulares se recortan los lados).
+              Sin imagen, el banner usa el color de acento.
+            </p>
+            {bannerError ? (
+              <p className="mt-1 text-xs font-medium text-[#a34433]">{bannerError}</p>
+            ) : null}
+          </div>
+          {bannerPreview ? (
+            <Field
+              label="Oscurecido del fondo"
+              htmlFor="bannerOverlayRange"
+              hint="Capa oscura sobre la foto para que el texto se lea bien."
+            >
+              <div className="flex items-center gap-3">
+                <input
+                  id="bannerOverlayRange"
+                  type="range"
+                  min={0}
+                  max={70}
+                  step={1}
+                  value={Math.round(bannerOverlay * 100)}
+                  onChange={(e) => setBannerOverlay(Number(e.target.value) / 100)}
+                  className="w-full accent-caramba-grafito"
+                />
+                <span className="w-12 shrink-0 text-right text-sm tabular-nums text-caramba-grafito/70">
+                  {Math.round(bannerOverlay * 100)}%
+                </span>
+              </div>
+            </Field>
+          ) : null}
           <div>
             <p className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-caramba-grafito/50">
               Color de acento
@@ -276,7 +463,11 @@ export function CompanyForm({ initial, appUrl }: { initial: CompanyFormInitial; 
             </div>
           </div>
           <div className="grid gap-5 sm:grid-cols-3">
-            <Field label="Cupo por persona" htmlFor="defaultQuota" hint="Default al importar">
+            <Field
+              label="Cupo si el Excel no trae cupo"
+              htmlFor="defaultQuota"
+              hint="Cada colaborador puede venir con su propio cupo en el archivo de importación; este valor se usa solo para quienes no lo traigan."
+            >
               <Input
                 id="defaultQuota"
                 name="defaultQuota"
@@ -287,7 +478,11 @@ export function CompanyForm({ initial, appUrl }: { initial: CompanyFormInitial; 
                 required
               />
             </Field>
-            <Field label="Stock de seguridad" htmlFor="safetyStock" hint="Últimas N unidades ocultas">
+            <Field
+              label="Stock de seguridad"
+              htmlFor="safetyStock"
+              hint="Un producto se oculta cuando su stock disponible llega a este número o menos: así no se ofrecen las últimas unidades, que podrían venderse en la tienda."
+            >
               <Input
                 id="safetyStock"
                 name="safetyStock"
@@ -299,7 +494,11 @@ export function CompanyForm({ initial, appUrl }: { initial: CompanyFormInitial; 
                 required
               />
             </Field>
-            <Field label="Estado" htmlFor="status">
+            <Field
+              label="Estado"
+              htmlFor="status"
+              hint="Borrador: nadie puede entrar todavía. Activa: los colaboradores pueden entrar y pedir. Cerrada: no entra nadie nuevo ni se aceptan más pedidos (quien tenga la sesión abierta puede mirar, pero no confirmar)."
+            >
               <select
                 id="status"
                 name="status"
@@ -490,8 +689,18 @@ export function CompanyForm({ initial, appUrl }: { initial: CompanyFormInitial; 
           </p>
         ) : null}
 
-        <Button type="submit" disabled={submitting} className="px-8 py-3">
-          {submitting ? "Guardando…" : "Guardar empresa y campaña"}
+        {/* Bloqueado también mientras sube una imagen: guardar en ese instante
+            persistiría la URL vieja y la recién subida se perdería en silencio */}
+        <Button
+          type="submit"
+          disabled={submitting || logoSubiendo || bannerSubiendo}
+          className="px-8 py-3"
+        >
+          {submitting
+            ? "Guardando…"
+            : logoSubiendo || bannerSubiendo
+              ? "Subiendo imagen…"
+              : "Guardar empresa y campaña"}
         </Button>
       </div>
 
@@ -500,17 +709,15 @@ export function CompanyForm({ initial, appUrl }: { initial: CompanyFormInitial; 
         <p className="text-[11px] font-bold uppercase tracking-wider text-caramba-grafito/50">
           Vista previa del banner
         </p>
-        <div
-          className="rounded-2xl px-6 py-8 text-white shadow-sm"
-          style={{ background: `linear-gradient(135deg, ${accent} 0%, ${accent}cc 100%)` }}
-        >
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/80">
-            {campaignName || "Campaña"} · {name || "Empresa"}
-          </p>
-          <p className="mt-2 font-display text-xl leading-snug">
-            {bannerTitle || "Título del banner"}
-          </p>
-        </div>
+        {/* El MISMO componente que pinta el microsite: la vista previa es fiel */}
+        <CampaignHero
+          kicker={`${campaignName || "Campaña"} · beneficio ${name || "Empresa"}`}
+          title={bannerTitle || "Título del banner"}
+          subtitle={bannerSubtitle || undefined}
+          accentColor={accent}
+          bannerImageUrl={bannerPreview || null}
+          bannerOverlay={bannerOverlay}
+        />
 
         <div className="flex items-center justify-between pt-2">
           <p className="text-[11px] font-bold uppercase tracking-wider text-caramba-grafito/50">

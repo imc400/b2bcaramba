@@ -15,7 +15,8 @@ embedded = false
 # read_products + read_inventory: espejo de catálogo y stock
 # write_inventory: descuento de stock al confirmar un pedido B2B
 # read_locations: identificar la bodega contra la que se descuenta
-scopes = "read_products,read_inventory,write_inventory,read_locations"
+# read_metaobjects: resolver el metaobjeto custom.age-group ("Edad recomendada")
+scopes = "read_products,read_inventory,write_inventory,read_locations,read_metaobjects"
 use_legacy_install_flow = false
 
 [auth]

@@ -63,6 +63,12 @@ curl -s -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
 2. Revisa el panel de Resend (rebotes/spam).
 3. El acceso es solo por código al correo: sin correo válido no entra.
 
+### "El colaborador pregunta si su regalo va en camino"
+
+Al pasar un pedido a **Despachado** se le envía solo un correo "va en camino" (sin
+precios). Si el correo falló, quedó anotado en el historial del pedido (auditoría,
+campo `correoDespacho`). Un fallo de correo nunca revierte el cambio de estado.
+
 ### "Un pedido quedó mal / hay que devolver el stock"
 
 Cambia su estado a **Anulado** en `/admin/pedidos`. Eso **repone el stock en Shopify automáticamente** (verificado). Es irreversible: `anulado` es estado terminal.

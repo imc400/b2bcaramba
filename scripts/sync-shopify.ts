@@ -32,6 +32,8 @@ const BULK_QUERY = `
         tags
         status
         updatedAt
+        edadColecciones: metafield(namespace: "custom", key: "edad_para_colecciones") { value }
+        ageGroup: metafield(namespace: "custom", key: "age-group") { value }
         featuredMedia { ... on MediaImage { image { url altText width height } } }
         media { edges { node { ... on MediaImage { image { url altText width height } } } } }
         variants {
@@ -81,6 +83,50 @@ async function graphql<T>(token: string, query: string, variables?: object): Pro
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * GIDs de metaobjetos (custom.age-group) → texto visible, en UNA query.
+ * Réplica standalone de resolveMetaobjectDisplayNames (operations.ts): este
+ * script no puede importarla porque `pnpm sync` corre tsx sin el tsconfig
+ * que stubea server-only. Tolerante a permisos: sin el scope read_metaobjects
+ * loguea claro, devuelve un mapa vacío y el sync continúa.
+ */
+async function resolverNombresEdad(token: string, gids: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  const ids = [...new Set(gids)].filter((g) => g.startsWith("gid://shopify/Metaobject/"));
+  if (ids.length === 0) return map;
+  try {
+    const data = await graphql<{
+      nodes: ({
+        id: string;
+        displayName: string | null;
+        fields: { key: string; value: string | null }[];
+      } | null)[];
+    }>(
+      token,
+      `query ($ids: [ID!]!) {
+         nodes(ids: $ids) {
+           ... on Metaobject { id displayName fields { key value } }
+         }
+       }`,
+      { ids },
+    );
+    for (const node of data.nodes) {
+      if (!node?.id) continue;
+      const texto =
+        node.displayName?.trim() || node.fields.find((f) => f.value?.trim())?.value?.trim();
+      if (texto) map.set(node.id, texto);
+    }
+  } catch (err) {
+    console.warn(
+      "   ⚠ No se pudieron resolver los metaobjetos de edad recomendada " +
+        "(¿falta el scope read_metaobjects? Reinstalar en /api/auth/shopify/install). " +
+        "recommended_age queda null. Detalle: " +
+        (err instanceof Error ? err.message : String(err)),
+    );
+  }
+  return map;
+}
 
 async function downloadCatalog(token: string): Promise<string> {
   console.log("→ Lanzando bulk operation…");
@@ -132,7 +178,7 @@ async function downloadCatalog(token: string): Promise<string> {
   return jsonl;
 }
 
-async function ingest(jsonl: string, locationId: number) {
+async function ingest(jsonl: string, locationId: number, token: string) {
   const { db } = await import("../src/db");
   const schema = await import("../src/db/schema");
   const { sql } = await import("drizzle-orm");
@@ -151,8 +197,20 @@ async function ingest(jsonl: string, locationId: number) {
       return true;
     });
   };
-  const productsList = dedup(parsed.products, (p) => String(p.shopifyId));
-  const productIds = new Set(productsList.map((p) => p.shopifyId));
+  const parsedProducts = dedup(parsed.products, (p) => String(p.shopifyId));
+  const productIds = new Set(parsedProducts.map((p) => p.shopifyId));
+
+  // Edad recomendada: una query con los GIDs distintos de custom.age-group.
+  // Sin el scope read_metaobjects el resolutor loguea y devuelve un mapa
+  // vacío: recommended_age queda null y el sync continúa.
+  const nombresEdad = await resolverNombresEdad(
+    token,
+    parsedProducts.flatMap((c) => (c.recommendedAgeGid ? [c.recommendedAgeGid] : [])),
+  );
+  const productsList = parsedProducts.map(({ recommendedAgeGid, ...c }) => ({
+    ...c,
+    recommendedAge: recommendedAgeGid ? (nombresEdad.get(recommendedAgeGid) ?? null) : null,
+  }));
   // Variantes huérfanas (producto no incluido) romperían la FK
   const variantsList = dedup(
     parsed.variants.filter((v) => productIds.has(v.productId)),
@@ -229,7 +287,7 @@ async function main() {
   }
   jsonl ??= await downloadCatalog(token);
 
-  await ingest(jsonl, locationId);
+  await ingest(jsonl, locationId, token);
   process.exit(0);
 }
 

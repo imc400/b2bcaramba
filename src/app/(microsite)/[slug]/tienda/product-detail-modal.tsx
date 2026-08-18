@@ -8,7 +8,6 @@ import type { CatalogProduct } from "@/lib/catalog";
 import { productDetailAction, type ProductDetailResult } from "../actions";
 import { useSelection, type SelectedItem } from "../selection";
 
-const AGE_TAG = /^\d+-\d+\s+(años|meses)$/i;
 
 function CheckIcon({ className }: { className?: string }) {
   return (
@@ -36,7 +35,8 @@ export function ProductDetailModal({
 
   const selected = isSelected(product.variantId);
   const quotaFull = quota === 0 || (items.length >= quota && !selected);
-  const ageTag = product.tags.find((t) => AGE_TAG.test(t)) ?? null;
+  // Edad recomendada (metaobjeto de Shopify); null = no se muestra chip
+  const recommendedAge = product.recommendedAge;
 
   useEffect(() => {
     let vivo = true;
@@ -79,7 +79,7 @@ export function ProductDetailModal({
     title: product.title,
     vendor: product.vendor,
     imageUrl: product.featuredImageUrl,
-    ageTag,
+    ageTag: recommendedAge,
   };
 
   return (
@@ -152,9 +152,9 @@ export function ProductDetailModal({
               {product.title}
             </h2>
             <div className="mt-3 flex flex-wrap gap-2">
-              {ageTag ? (
+              {recommendedAge ? (
                 <span className="rounded-full bg-caramba-amarillo-soft px-3 py-1 text-xs font-semibold text-caramba-amarillo-texto">
-                  {ageTag}
+                  {recommendedAge}
                 </span>
               ) : null}
               {product.productType ? (

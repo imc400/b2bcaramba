@@ -9,7 +9,6 @@ import type { CatalogProduct } from "@/lib/catalog";
 import { useSelection, type SelectedItem } from "../selection";
 import { ProductDetailModal } from "./product-detail-modal";
 
-const AGE_TAG = /^\d+-\d+\s+(años|meses)$/i;
 
 function CheckIcon({ className }: { className?: string }) {
   return (
@@ -58,7 +57,9 @@ function ProductCard({
   const [flash, setFlash] = useState<"quota_full" | null>(null);
   const selected = isSelected(product.variantId);
   const quotaFull = quota === 0 || (items.length >= quota && !selected);
-  const ageTag = product.tags.find((t) => AGE_TAG.test(t)) ?? null;
+  // Edad recomendada (metaobjeto de Shopify). Si es null no se muestra nada:
+  // mejor sin dato que un dato equivocado (feedback de la clienta).
+  const recommendedAge = product.recommendedAge;
 
   const snapshot: SelectedItem = {
     variantId: product.variantId,
@@ -66,7 +67,7 @@ function ProductCard({
     title: product.title,
     vendor: product.vendor,
     imageUrl: product.featuredImageUrl,
-    ageTag,
+    ageTag: recommendedAge,
   };
 
   function onToggle() {
@@ -101,9 +102,9 @@ function ProductCard({
             className="object-contain p-4 transition-transform duration-500 ease-out group-hover:scale-[1.04]"
           />
         ) : null}
-        {ageTag ? (
+        {recommendedAge ? (
           <span className="absolute left-2.5 top-2.5 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-semibold text-caramba-grafito/70 backdrop-blur">
-            {ageTag}
+            {recommendedAge}
           </span>
         ) : null}
         {selected ? (

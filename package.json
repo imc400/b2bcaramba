@@ -20,6 +20,7 @@
     "admin:crear": "tsx --tsconfig tsconfig.scripts.json scripts/create-admin.ts",
     "verify:email": "tsx --tsconfig tsconfig.scripts.json scripts/verify-email.ts",
     "migrate:supabase": "tsx --tsconfig tsconfig.scripts.json scripts/migrate-supabase.ts",
+    "storage:setup": "tsx --tsconfig tsconfig.scripts.json scripts/setup-storage.ts",
     "admin:password": "tsx --tsconfig tsconfig.scripts.json scripts/set-admin-password.ts"
   },
   "dependencies": {

@@ -4,7 +4,8 @@ import { db } from "@/db";
 import { inventoryLevels, products, variants } from "@/db/schema";
 import { shopifyAdmin } from "./client";
 import { getFulfillmentLocationId } from "./location";
-import { numericId, PRODUCT_SYNC_QUERY } from "./operations";
+import { numericId, PRODUCT_SYNC_QUERY, resolveMetaobjectDisplayNames } from "./operations";
+import { parseAgeRangesValue } from "./bulk-parse";
 
 type ImageNode = { url: string; altText: string | null; width: number; height: number };
 
@@ -18,6 +19,8 @@ type ProductPayload = {
     productType: string | null;
     category: { fullName: string } | null;
     tags: string[];
+    edadColecciones: { value: string | null } | null;
+    ageGroup: { value: string | null } | null;
     status: "ACTIVE" | "ARCHIVED" | "DRAFT" | "UNLISTED";
     updatedAt: string;
     featuredMedia: { image: ImageNode | null } | null;
@@ -68,6 +71,14 @@ export async function syncProductFromShopify(productGid: string): Promise<void> 
     .filter((i): i is ImageNode => i !== null);
   const featuredImageUrl = p.featuredMedia?.image?.url ?? images[0]?.url ?? null;
 
+  // Edad recomendada: el metacampo trae el GID del metaobjeto; se resuelve en
+  // una query aparte, tolerante a que falte el scope read_metaobjects (en ese
+  // caso queda null y el sync sigue).
+  const ageGid = p.ageGroup?.value?.trim() || null;
+  const recommendedAge = ageGid
+    ? ((await resolveMetaobjectDisplayNames([ageGid])).get(ageGid) ?? null)
+    : null;
+
   await db.transaction(async (tx) => {
     const productValues = {
       shopifyId: productId,
@@ -78,6 +89,8 @@ export async function syncProductFromShopify(productGid: string): Promise<void> 
       productType: p.productType,
       category: p.category?.fullName ?? null,
       tags: p.tags,
+      ageRanges: parseAgeRangesValue(p.edadColecciones?.value),
+      recommendedAge,
       status: p.status,
       featuredImageUrl,
       images,

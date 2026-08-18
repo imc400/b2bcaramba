@@ -40,6 +40,14 @@ export const products = pgTable(
     productType: text("product_type"),
     category: text("category"),
     tags: text("tags").array().notNull().default([]),
+    // Tramos del metacampo custom.edad_para_colecciones ("0 - 12 meses",
+    // "2 - 4 años", …). Un producto puede tener varios. ES el filtro de edad
+    // del microsite; las etiquetas ya no participan.
+    ageRanges: text("age_ranges").array().notNull().default([]),
+    // Texto resuelto del metaobjeto custom.age-group ("Edad recomendada").
+    // Null si el producto no lo define o si la app aún no tiene el scope
+    // read_metaobjects para resolverlo. Solo informativo, nunca filtra.
+    recommendedAge: text("recommended_age"),
     status: productStatusEnum("status").notNull(),
     featuredImageUrl: text("featured_image_url"),
     // [{ url, altText, width, height }] en orden de Shopify
@@ -53,6 +61,7 @@ export const products = pgTable(
   (t) => [
     index("products_status_idx").on(t.status),
     index("products_tags_idx").using("gin", t.tags),
+    index("products_age_ranges_idx").using("gin", t.ageRanges),
   ],
 );
 
@@ -147,8 +156,13 @@ export const campaigns = pgTable(
     bannerTitle: text("banner_title").notNull(),
     bannerSubtitle: text("banner_subtitle"),
     bannerImageUrl: text("banner_image_url"),
-    // Tema visual del microsite (color de acento, etc.) — co-branding editable
-    theme: jsonb("theme").$type<{ accentColor?: string; bannerBg?: string }>(),
+    // Tema visual del microsite (acento, oscurecido del banner) — co-branding
+    // editable. bannerOverlay: opacidad 0–0.7 de la capa oscura sobre la foto.
+    theme: jsonb("theme").$type<{
+      accentColor?: string;
+      bannerBg?: string;
+      bannerOverlay?: number;
+    }>(),
     startsAt: timestamp("starts_at", { withTimezone: true }),
     endsAt: timestamp("ends_at", { withTimezone: true }),
     catalogFilter: jsonb("catalog_filter").$type<CatalogFilter>().notNull().default({}),

@@ -13,6 +13,7 @@ import {
 import {
   orderConfirmationHtml,
   orderNotificationHtml,
+  orderShippedHtml,
   sendEmail,
 } from "@/lib/email/send";
 import { adjustInventory, getInventoryQuantities } from "@/lib/shopify/operations";
@@ -245,6 +246,34 @@ export async function confirmOrderToCollaborator(bundle: OrderBundle): Promise<v
       items: bundle.items.map((i) => ({ title: i.productTitle, quantity: i.quantity })),
     }),
   });
+}
+
+/**
+ * Aviso al colaborador de que su pedido va en camino (transición a
+ * "despachado"). Prefiere el correo de la nómina del colaborador y cae al que
+ * dejó en el pedido. Devuelve el destinatario usado, o null si no hay ninguno.
+ */
+export async function notifyOrderShipped(bundle: OrderBundle): Promise<string | null> {
+  const destinatario = bundle.collaborator.email ?? bundle.order.email;
+  if (!destinatario) return null;
+  await sendEmail({
+    to: [destinatario],
+    subject: `Tu pedido ${bundle.order.code} va en camino`,
+    html: orderShippedHtml({
+      code: bundle.order.code,
+      collaboratorName: bundle.collaborator.name ?? bundle.order.recipientName,
+      recipientName: bundle.order.recipientName,
+      addressLine: bundle.order.addressLine,
+      comuna: bundle.order.comuna,
+      region: bundle.order.region,
+      items: bundle.items.map((i) => ({
+        title: i.productTitle,
+        variantTitle: i.variantTitle,
+        quantity: i.quantity,
+      })),
+    }),
+  });
+  return destinatario;
 }
 
 /**

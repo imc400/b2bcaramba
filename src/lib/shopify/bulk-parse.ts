@@ -15,6 +15,10 @@ type ParsedProduct = {
   productType: string | null;
   category: string | null;
   tags: string[];
+  /** Tramos de custom.edad_para_colecciones ("0 - 12 meses", "2 - 4 años", …) */
+  ageRanges: string[];
+  /** GID del metaobjeto custom.age-group; se resuelve a texto en la ingesta */
+  recommendedAgeGid: string | null;
   status: "ACTIVE" | "ARCHIVED" | "DRAFT" | "UNLISTED";
   images: ImageNode[];
   featuredImageUrl: string | null;
@@ -47,6 +51,31 @@ export type ParsedCatalog = {
   variants: ParsedVariant[];
   levels: ParsedLevel[];
 };
+
+/**
+ * Valor crudo de custom.edad_para_colecciones → tramos limpios.
+ * El metacampo es list.single_line_text_field: su value llega como string
+ * JSON ('["2 - 4 años","4 - 6 años"]'). Defensivo: un JSON malformado, un
+ * string suelto o tipos inesperados no rompen el sync — se degrada a [].
+ */
+export function parseAgeRangesValue(value: string | null | undefined): string[] {
+  if (!value) return [];
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (typeof parsed === "string") return parsed.trim() ? [parsed.trim()] : [];
+    if (!Array.isArray(parsed)) return [];
+    return [
+      ...new Set(
+        parsed
+          .filter((t): t is string => typeof t === "string")
+          .map((t) => t.trim())
+          .filter(Boolean),
+      ),
+    ];
+  } catch {
+    return [];
+  }
+}
 
 /** Parsea las líneas del JSONL a estructuras planas listas para upsert. */
 export function parseBulkCatalogLines(lines: Iterable<string>): ParsedCatalog {
@@ -123,6 +152,8 @@ export function parseBulkCatalogLines(lines: Iterable<string>): ParsedCatalog {
         productType: string | null;
         category: { fullName: string } | null;
         tags: string[];
+        edadColecciones: { value: string | null } | null;
+        ageGroup: { value: string | null } | null;
         status: "ACTIVE" | "ARCHIVED" | "DRAFT" | "UNLISTED";
         updatedAt: string;
         featuredMedia: { image: ImageNode | null } | null;
@@ -136,6 +167,8 @@ export function parseBulkCatalogLines(lines: Iterable<string>): ParsedCatalog {
         productType: p.productType || null,
         category: p.category?.fullName ?? null,
         tags: p.tags ?? [],
+        ageRanges: parseAgeRangesValue(p.edadColecciones?.value),
+        recommendedAgeGid: p.ageGroup?.value?.trim() || null,
         status: p.status,
         images: p.featuredMedia?.image ? [p.featuredMedia.image] : [],
         featuredImageUrl: p.featuredMedia?.image?.url ?? null,

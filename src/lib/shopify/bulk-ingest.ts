@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { inventoryLevels, products, variants } from "@/db/schema";
 import { parseBulkCatalogLines } from "./bulk-parse";
+import { resolveMetaobjectDisplayNames } from "./operations";
 export { parseBulkCatalogLines } from "./bulk-parse";
 
 /**
@@ -42,8 +43,19 @@ export async function ingestBulkCatalog(jsonlUrl: string): Promise<{
   };
   const parsedProducts = dedupe(raw.products, (p) => String(p.shopifyId));
   const productIds = new Set(parsedProducts.map((p) => p.shopifyId));
+
+  // Edad recomendada: UNA query por sync con los GIDs distintos de age-group.
+  // Si falta el scope read_metaobjects, el mapa vuelve vacío (log adentro) y
+  // recommended_age queda null sin romper la ingesta.
+  const nombresEdad = await resolveMetaobjectDisplayNames(
+    parsedProducts.flatMap((p) => (p.recommendedAgeGid ? [p.recommendedAgeGid] : [])),
+  );
+
   const parsed = {
-    products: parsedProducts,
+    products: parsedProducts.map(({ recommendedAgeGid, ...p }) => ({
+      ...p,
+      recommendedAge: recommendedAgeGid ? (nombresEdad.get(recommendedAgeGid) ?? null) : null,
+    })),
     // Variantes huérfanas romperían la FK contra products
     variants: dedupe(
       raw.variants.filter((v) => productIds.has(v.productId)),
@@ -68,6 +80,8 @@ export async function ingestBulkCatalog(jsonlUrl: string): Promise<{
             productType: sql`excluded.product_type`,
             category: sql`excluded.category`,
             tags: sql`excluded.tags`,
+            ageRanges: sql`excluded.age_ranges`,
+            recommendedAge: sql`excluded.recommended_age`,
             status: sql`excluded.status`,
             featuredImageUrl: sql`excluded.featured_image_url`,
             images: sql`excluded.images`,

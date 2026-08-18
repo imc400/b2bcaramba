@@ -4,8 +4,9 @@ import { isAdminAuthenticated } from "@/lib/auth/admin";
 
 // DEBE coincidir con `scopes` de shopify.app.toml: si aquí falta uno, el token
 // que emite este flujo nace con menos permisos que los declarados y algo se
-// rompe en silencio (read_locations identifica la bodega que despacha).
-const SCOPES = "read_products,read_inventory,write_inventory,read_locations";
+// rompe en silencio (read_locations identifica la bodega que despacha;
+// read_metaobjects resuelve la "Edad recomendada" de custom.age-group).
+const SCOPES = "read_products,read_inventory,write_inventory,read_locations,read_metaobjects";
 
 /**
  * Inicia el authorization code grant contra la tienda. Solo para admins con

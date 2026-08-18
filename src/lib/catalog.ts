@@ -17,10 +17,6 @@ import { db } from "@/db";
 import { inventoryLevels, products, variants, type CatalogFilter } from "@/db/schema";
 import { getFulfillmentLocationId } from "./shopify/location";
 
-/** Tag de edad reconocido en Shopify: "2-4 años", "0-12 meses", "12-99 años" */
-const AGE_TAG_SQL = "^[0-9]+-[0-9]+ (años|meses)$";
-const AGE_TAG = /^\d+-\d+\s+(años|meses)$/i;
-
 export type CatalogProduct = {
   shopifyId: number;
   title: string;
@@ -28,6 +24,9 @@ export type CatalogProduct = {
   vendor: string | null;
   productType: string | null;
   tags: string[];
+  /** Edad recomendada (metaobjeto custom.age-group); solo informativa.
+   *  Null si el producto no la define o falta el scope read_metaobjects. */
+  recommendedAge: string | null;
   featuredImageUrl: string | null;
   /** Variante representativa disponible (la de menor posición con stock) */
   variantId: number;
@@ -36,7 +35,8 @@ export type CatalogProduct = {
 };
 
 export type CatalogFacets = {
-  ages: { tag: string; count: number }[];
+  /** Tramos de custom.edad_para_colecciones con productos visibles */
+  ages: { range: string; count: number }[];
   categories: { name: string; count: number }[];
 };
 
@@ -106,7 +106,9 @@ function userConditions(opts: {
   search?: string;
 }): SQL[] {
   const conditions: SQL[] = [];
-  if (opts.selectedAges?.length) conditions.push(arrayOverlaps(products.tags, opts.selectedAges));
+  if (opts.selectedAges?.length) {
+    conditions.push(arrayOverlaps(products.ageRanges, opts.selectedAges));
+  }
   if (opts.selectedCategories?.length) {
     conditions.push(
       inArray(
@@ -157,6 +159,7 @@ export async function getCampaignCatalog(opts: {
       vendor: products.vendor,
       productType: products.productType,
       tags: products.tags,
+      recommendedAge: products.recommendedAge,
       featuredImageUrl: products.featuredImageUrl,
       // .mapWith(Number) NO es opcional: en un fragmento sql`` crudo, Drizzle no
       // aplica el codec de la columna, y un bigint (int8) llega como STRING
@@ -260,21 +263,22 @@ async function getFacets(base: SQL): Promise<CatalogFacets> {
   const [ageRows, catRows] = await Promise.all([
     db
       .select({
-        tag: sql<string>`tag`,
-        count: sql<number>`count(*)::int`,
+        range: sql<string>`tramo`,
+        // .mapWith(Number): en fragmentos sql`` crudos Drizzle no aplica el
+        // codec de la columna y el count llegaría como string
+        count: sql<number>`count(*)::int`.mapWith(Number),
       })
       .from(
         db
           .select({
             shopifyId: products.shopifyId,
-            tag: sql<string>`unnest(${products.tags})`.as("tag"),
+            range: sql<string>`unnest(${products.ageRanges})`.as("tramo"),
           })
           .from(products)
           .innerJoin(visibles, eq(visibles.shopifyId, products.shopifyId))
-          .as("tags_expandidos"),
+          .as("tramos_expandidos"),
       )
-      .where(sql`tag ~ ${AGE_TAG_SQL}`)
-      .groupBy(sql`tag`),
+      .groupBy(sql`tramo`),
     db
       .select({
         // Shopify trae "Arte y Manualidades" y "Arte y manualidades" como
@@ -291,14 +295,18 @@ async function getFacets(base: SQL): Promise<CatalogFacets> {
   ]);
 
   return {
-    ages: ageRows.sort((a, b) => ageSortKey(a.tag) - ageSortKey(b.tag)),
+    ages: ageRows.sort((a, b) => ageSortKey(a.range) - ageSortKey(b.range)),
     categories: catRows,
   };
 }
 
-/** Ordena edades: meses primero, luego años por inicio de rango. */
-function ageSortKey(tag: string): number {
-  const m = tag.match(/^(\d+)-(\d+)\s+(años|meses)/i);
+/**
+ * Ordena tramos de edad: meses primero, luego años por inicio de tramo.
+ * El formato del metacampo lleva espacios ("0 - 12 meses", "2 - 4 años");
+ * la regex tolera ambas variantes con o sin ellos.
+ */
+function ageSortKey(range: string): number {
+  const m = range.match(/^(\d+)\s*-\s*(\d+)\s+(años|meses)/i);
   if (!m) return 9999;
   const start = Number(m[1]);
   return m[3].toLowerCase() === "meses" ? start : 100 + start * 10;
@@ -381,4 +389,3 @@ export async function getOrderableVariantIds(
   return new Set(rows.map((r) => r.variantId));
 }
 
-export { AGE_TAG };

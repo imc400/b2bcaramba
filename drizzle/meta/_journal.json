@@ -43,6 +43,13 @@
       "when": 1785183114867,
       "tag": "0005_email_events",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787086196962,
+      "tag": "0006_volatile_dreadnoughts",
+      "breakpoints": true
     }
   ]
 }

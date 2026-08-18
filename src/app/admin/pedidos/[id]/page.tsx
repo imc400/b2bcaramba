@@ -65,7 +65,7 @@ export default async function PedidoDetallePage({
       active="/admin/pedidos"
       usuario={actor}
       title={`Pedidos › ${order.code}`}
-      actions={<StatusSelect orderId={order.id} current={order.status} />}
+      actions={<StatusSelect orderId={order.id} code={order.code} current={order.status} />}
     >
       <Link
         href="/admin/pedidos"
