@@ -114,8 +114,11 @@ regeneran con `pnpm storage:setup`). El banner de campaña se edita con vista pr
 computador y celular — (`CampaignHero`, compartido entre panel y microsite; el panel
 fuerza `variant`). Dos imágenes: escritorio **2400 × 800 (3:1)** y celular **1080 × 1080
 (1:1)** en `campaigns.banner_image_mobile_url` (migración 0007); si falta una, la otra
-cubre ambas pantallas. Oscurecido en `theme.bannerOverlay` y ancla del texto en
-`theme.bannerTextPosition` (grilla 3×3, default center-left). Archivos
+cubre ambas pantallas. Oscurecido en `theme.bannerOverlay`; ancla del texto POR PANTALLA:
+`theme.bannerTextPosition` (computador, default center-left) y
+`theme.bannerTextPositionMobile` (ausente = sigue a computador). Todo se edita en el
+"estudio de banner" (modal `banner-studio.tsx`, botón "Diseñar banner" del formulario):
+controles + ambas vistas previas en una sola pantalla. Archivos
 huérfanos (subida sin guardar) son posibles y triviales; no hay GC.
 
 ## Acceso al panel

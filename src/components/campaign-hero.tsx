@@ -29,12 +29,29 @@ const VERTICAL: Record<string, string> = {
   center: "justify-center",
   bottom: "justify-end",
 };
+// Versión sm: para componer "celular abajo, computador arriba" en responsive
+const VERTICAL_SM: Record<string, string> = {
+  top: "sm:justify-start",
+  center: "sm:justify-center",
+  bottom: "sm:justify-end",
+};
 
 const HORIZONTAL: Record<string, { text: string; block: string }> = {
   left: { text: "text-left", block: "" },
   center: { text: "text-center", block: "mx-auto" },
   right: { text: "text-right", block: "ml-auto" },
 };
+const HORIZONTAL_SM: Record<string, { text: string; block: string }> = {
+  left: { text: "sm:text-left", block: "sm:mx-0" },
+  center: { text: "sm:text-center", block: "sm:mx-auto" },
+  right: { text: "sm:text-right", block: "sm:ml-auto sm:mr-0" },
+};
+
+/** "fila-columna" → { fila, columna } con defaults seguros. */
+function parsePosicion(pos: string | null | undefined): { fila: string; columna: string } {
+  const [fila = "center", columna = "left"] = (pos ?? "center-left").split("-");
+  return { fila: fila in VERTICAL ? fila : "center", columna: columna in HORIZONTAL ? columna : "left" };
+}
 
 export function CampaignHero({
   kicker,
@@ -45,6 +62,7 @@ export function CampaignHero({
   bannerImageMobileUrl,
   bannerOverlay = 0.35,
   bannerTextPosition,
+  bannerTextPositionMobile,
   compact = false,
   variant = "responsive",
   decorationIcon = "rocking-horse",
@@ -61,8 +79,10 @@ export function CampaignHero({
   bannerImageMobileUrl?: string | null;
   /** Opacidad de la capa oscura sobre la foto, 0–0.7 */
   bannerOverlay?: number;
-  /** Dónde se ancla el texto; ausente = "center-left" (aspecto histórico) */
+  /** Dónde se ancla el texto en computador; ausente = "center-left" */
   bannerTextPosition?: string | null;
+  /** Ancla del texto en celular; ausente o vacío = sigue a la de computador */
+  bannerTextPositionMobile?: string | null;
   /** Variante compacta (tienda) vs. portada */
   compact?: boolean;
   /** "responsive" en el microsite; el panel fuerza "desktop"/"mobile" */
@@ -76,9 +96,25 @@ export function CampaignHero({
   const oscurecido = Math.min(0.7, Math.max(0, bannerOverlay));
   const textColor = conImagen ? "#ffffff" : accentText(accentColor);
 
-  const [fila = "center", columna = "left"] = (bannerTextPosition ?? "center-left").split("-");
-  const vertical = VERTICAL[fila] ?? VERTICAL.center;
-  const horizontal = HORIZONTAL[columna] ?? HORIZONTAL.left;
+  // Posición por pantalla: el celular puede anclar distinto al computador.
+  const posD = parsePosicion(bannerTextPosition);
+  const posM = bannerTextPositionMobile ? parsePosicion(bannerTextPositionMobile) : posD;
+  let vertical: string;
+  let horizontal: { text: string; block: string };
+  if (variant === "desktop") {
+    vertical = VERTICAL[posD.fila];
+    horizontal = HORIZONTAL[posD.columna];
+  } else if (variant === "mobile") {
+    vertical = VERTICAL[posM.fila];
+    horizontal = HORIZONTAL[posM.columna];
+  } else {
+    // responsive: base = celular, sm+ = computador
+    vertical = `${VERTICAL[posM.fila]} ${VERTICAL_SM[posD.fila]}`;
+    horizontal = {
+      text: `${HORIZONTAL[posM.columna].text} ${HORIZONTAL_SM[posD.columna].text}`,
+      block: `${HORIZONTAL[posM.columna].block} ${HORIZONTAL_SM[posD.columna].block}`.trim(),
+    };
+  }
 
   // Clases por variante. Alto: con foto el banner toma la proporción del arte
   // recomendado (1:1 celular, 3:1 escritorio; la tienda compacta usa franjas

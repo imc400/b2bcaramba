@@ -20,6 +20,7 @@ export default async function NuevaEmpresaPage() {
           bannerImageMobileUrl: "",
           bannerOverlay: 0.35,
           bannerTextPosition: "center-left",
+          bannerTextPositionMobile: "",
           accentColor: "#8CBEA3",
           endsAt: "",
           defaultQuota: 1,

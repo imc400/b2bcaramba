@@ -73,6 +73,7 @@ export default async function TiendaPage({
           bannerImageMobileUrl={session.campaign.bannerImageMobileUrl}
           bannerOverlay={session.campaign.theme?.bannerOverlay}
           bannerTextPosition={session.campaign.theme?.bannerTextPosition}
+          bannerTextPositionMobile={session.campaign.theme?.bannerTextPositionMobile}
         />
 
         {/* Búsqueda + filtros */}

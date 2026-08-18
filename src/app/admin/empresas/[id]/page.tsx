@@ -61,6 +61,7 @@ export default async function EditarEmpresaPage({
           bannerImageMobileUrl: campaign?.bannerImageMobileUrl ?? "",
           bannerOverlay: campaign?.theme?.bannerOverlay ?? 0.35,
           bannerTextPosition: campaign?.theme?.bannerTextPosition ?? "center-left",
+          bannerTextPositionMobile: campaign?.theme?.bannerTextPositionMobile ?? "",
           accentColor: campaign?.theme?.accentColor ?? "#8CBEA3",
           endsAt: campaign?.endsAt ? campaign.endsAt.toISOString().slice(0, 10) : "",
           defaultQuota: campaign?.defaultQuota ?? 1,

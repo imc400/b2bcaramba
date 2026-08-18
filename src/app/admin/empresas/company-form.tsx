@@ -1,9 +1,10 @@
 "use client";
 
-import { ImagePlus, Loader2, Plus, Search, X } from "lucide-react";
+import { Loader2, Paintbrush, Plus, Search, X } from "lucide-react";
 import Image from "next/image";
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { CampaignHero } from "@/components/campaign-hero";
+import { BannerStudio } from "./banner-studio";
 import { Button, Card, Field, Input, Label } from "@/components/ui";
 import {
   previewFilterAction,
@@ -38,6 +39,8 @@ export type CompanyFormInitial = {
   bannerOverlay: number;
   /** Ancla del texto sobre el banner: "top|center|bottom-left|center|right" */
   bannerTextPosition: string;
+  /** Ancla del texto en celular; "" = sigue la de computador */
+  bannerTextPositionMobile: string;
   accentColor: string;
   endsAt: string;
   defaultQuota: number;
@@ -91,6 +94,9 @@ export function CompanyForm({ initial, appUrl }: { initial: CompanyFormInitial; 
   const [bannerTextPosition, setBannerTextPosition] = useState(
     initial.bannerTextPosition || "center-left",
   );
+  // "" = el celular sigue la posición de computador
+  const [bannerMovilPos, setBannerMovilPos] = useState(initial.bannerTextPositionMobile);
+  const [estudioAbierto, setEstudioAbierto] = useState(false);
 
   const [preview, setPreview] = useState<{
     total: number;
@@ -257,6 +263,7 @@ export function CompanyForm({ initial, appUrl }: { initial: CompanyFormInitial; 
   }
 
   return (
+    <>
     <form action={submit} className="grid gap-6 lg:grid-cols-[1fr_400px]">
       {initial.companyId ? <input type="hidden" name="companyId" value={initial.companyId} /> : null}
       {initial.campaignId ? (
@@ -268,6 +275,7 @@ export function CompanyForm({ initial, appUrl }: { initial: CompanyFormInitial; 
       <input type="hidden" name="bannerImageMobileUrl" value={bannerMovilUrl} />
       <input type="hidden" name="bannerOverlay" value={String(bannerOverlay)} />
       <input type="hidden" name="bannerTextPosition" value={bannerTextPosition} />
+      <input type="hidden" name="bannerTextPositionMobile" value={bannerMovilPos} />
       <input
         type="hidden"
         name="includeProductIds"
@@ -394,107 +402,45 @@ export function CompanyForm({ initial, appUrl }: { initial: CompanyFormInitial; 
             />
           </Field>
           <div>
-            <Label>Imagen de fondo del banner</Label>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <BannerUploadZone
-                titulo="Computador"
-                medidas="2400 × 800 px (3:1)"
-                aspecto="aspect-[3/1]"
-                preview={bannerPreview}
-                subiendo={bannerSubiendo}
-                error={bannerError}
-                onFile={handleBannerFile}
-                onQuitar={() => {
-                  setBannerImageUrl("");
-                  setBannerPreview("");
-                  setBannerError(null);
-                }}
-              />
-              <BannerUploadZone
-                titulo="Celular"
-                medidas="1080 × 1080 px (cuadrada)"
-                aspecto="aspect-square"
-                preview={bannerMovilPreview}
-                subiendo={bannerMovilSubiendo}
-                error={bannerMovilError}
-                onFile={handleBannerMovilFile}
-                onQuitar={() => {
-                  setBannerMovilUrl("");
-                  setBannerMovilPreview("");
-                  setBannerMovilError(null);
-                }}
-              />
-            </div>
-            <p className="mt-1.5 text-xs text-caramba-grafito/65">
-              Opcional. JPG o PNG, máx. 4 MB cada una. Si solo subes una, se usa en ambas
-              pantallas. Mejor fotos limpias sin texto incrustado: el título va encima y el
-              oscurecido asegura que se lea. Sin imagen, el banner usa el color de acento.
-            </p>
-          </div>
-          {bannerPreview || bannerMovilPreview ? (
-            <Field
-              label="Oscurecido del fondo"
-              htmlFor="bannerOverlayRange"
-              hint="Capa oscura sobre la foto para que el texto se lea bien."
-            >
-              <div className="flex items-center gap-3">
-                <input
-                  id="bannerOverlayRange"
-                  type="range"
-                  min={0}
-                  max={70}
-                  step={1}
-                  value={Math.round(bannerOverlay * 100)}
-                  onChange={(e) => setBannerOverlay(Number(e.target.value) / 100)}
-                  className="w-full accent-caramba-grafito"
-                />
-                <span className="w-12 shrink-0 text-right text-sm tabular-nums text-caramba-grafito/70">
-                  {Math.round(bannerOverlay * 100)}%
-                </span>
-              </div>
-            </Field>
-          ) : null}
-          <div>
-            <p className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-caramba-grafito/50">
-              Posición del texto
-            </p>
-            <div className="flex items-center gap-4">
-              <div
-                role="radiogroup"
-                aria-label="Posición del texto sobre el banner"
-                className="grid w-fit grid-cols-3 gap-1 rounded-xl border border-caramba-grafito/15 bg-white p-1.5"
+            <Label>Banner de la campaña</Label>
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-caramba-grafito/15 p-3">
+              {bannerPreview || bannerMovilPreview ? (
+                <div className="flex items-center gap-2">
+                  {bannerPreview ? (
+                    <div className="aspect-[3/1] w-28 overflow-hidden rounded-lg border border-caramba-grafito/10">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={bannerPreview} alt="Banner computador" className="h-full w-full object-cover" />
+                    </div>
+                  ) : null}
+                  {bannerMovilPreview ? (
+                    <div className="aspect-square w-10 overflow-hidden rounded-lg border border-caramba-grafito/10">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={bannerMovilPreview} alt="Banner celular" className="h-full w-full object-cover" />
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="text-xs text-caramba-grafito/55">
+                  Sin imágenes: el banner usa el color de acento.
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={() => setEstudioAbierto(true)}
+                className="inline-flex min-h-10 items-center gap-2 rounded-full border border-caramba-grafito/15 bg-white px-4 py-2 text-sm font-semibold text-caramba-grafito transition-colors hover:border-caramba-grafito/40"
               >
-                {(["top", "center", "bottom"] as const).flatMap((fila) =>
-                  (["left", "center", "right"] as const).map((col) => {
-                    const valor = `${fila}-${col}`;
-                    const activo = bannerTextPosition === valor;
-                    return (
-                      <button
-                        key={valor}
-                        type="button"
-                        role="radio"
-                        aria-checked={activo}
-                        aria-label={`${POSICION_FILA[fila]} ${POSICION_COL[col]}`}
-                        title={`${POSICION_FILA[fila]} ${POSICION_COL[col]}`}
-                        onClick={() => setBannerTextPosition(valor)}
-                        className={`flex size-8 items-center justify-center rounded-lg transition-colors ${
-                          activo ? "bg-caramba-grafito" : "hover:bg-caramba-crema"
-                        }`}
-                      >
-                        <span
-                          className={`size-2 rounded-full ${
-                            activo ? "bg-white" : "bg-caramba-grafito/30"
-                          }`}
-                        />
-                      </button>
-                    );
-                  }),
+                {bannerSubiendo || bannerMovilSubiendo ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Paintbrush className="size-4" strokeWidth={2} />
                 )}
-              </div>
-              <p className="max-w-48 text-xs text-caramba-grafito/65">
-                Dónde se ancla el título sobre el banner, como en los sliders de Shopify.
-              </p>
+                Diseñar banner
+              </button>
             </div>
+            <p className="mt-1 text-xs text-caramba-grafito/65">
+              Imágenes, oscurecido y posición del texto se editan en el estudio, con vista
+              previa de computador y celular a la vez.
+            </p>
           </div>
           <div>
             <p className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-caramba-grafito/50">
@@ -774,6 +720,7 @@ export function CompanyForm({ initial, appUrl }: { initial: CompanyFormInitial; 
           bannerImageMobileUrl={bannerMovilPreview || null}
           bannerOverlay={bannerOverlay}
           bannerTextPosition={bannerTextPosition}
+          bannerTextPositionMobile={bannerMovilPos}
         />
         <p className="pt-1 text-[11px] font-bold uppercase tracking-wider text-caramba-grafito/50">
           Vista previa del banner · celular
@@ -789,6 +736,7 @@ export function CompanyForm({ initial, appUrl }: { initial: CompanyFormInitial; 
             bannerImageMobileUrl={bannerMovilPreview || null}
             bannerOverlay={bannerOverlay}
             bannerTextPosition={bannerTextPosition}
+            bannerTextPositionMobile={bannerMovilPos}
           />
         </div>
 
@@ -870,76 +818,44 @@ export function CompanyForm({ initial, appUrl }: { initial: CompanyFormInitial; 
         </div>
       </div>
     </form>
-  );
-}
-
-const POSICION_FILA = { top: "Arriba", center: "Centro", bottom: "Abajo" } as const;
-const POSICION_COL = { left: "izquierda", center: "centro", right: "derecha" } as const;
-
-/** Tarjeta de subida de una de las dos imágenes del banner (computador/celular). */
-function BannerUploadZone({
-  titulo,
-  medidas,
-  aspecto,
-  preview,
-  subiendo,
-  error,
-  onFile,
-  onQuitar,
-}: {
-  titulo: string;
-  medidas: string;
-  /** Proporción de la miniatura de esta zona */
-  aspecto: string;
-  preview: string;
-  subiendo: boolean;
-  error: string | null;
-  onFile: (file: File | undefined) => void;
-  onQuitar: () => void;
-}) {
-  return (
-    <div className="rounded-xl border border-caramba-grafito/15 p-3">
-      <p className="text-xs font-bold text-caramba-grafito">
-        {titulo}
-        <span className="ml-1.5 font-medium text-caramba-grafito/50">{medidas}</span>
-      </p>
-      {preview ? (
-        <div className={`mt-2 overflow-hidden rounded-lg border border-caramba-grafito/10 ${aspecto}`}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={preview} alt={`Imagen del banner (${titulo})`} className="h-full w-full object-cover" />
-        </div>
-      ) : null}
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <label className="inline-flex min-h-9 cursor-pointer items-center justify-center gap-1.5 rounded-full border border-caramba-grafito/15 bg-white px-3.5 py-1.5 text-xs font-semibold text-caramba-grafito transition-colors hover:border-caramba-grafito/40">
-          {subiendo ? (
-            <Loader2 className="size-3.5 animate-spin" />
-          ) : (
-            <ImagePlus className="size-3.5" strokeWidth={2} />
-          )}
-          {preview ? "Cambiar" : "Subir"}
-          <input
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            className="sr-only"
-            disabled={subiendo}
-            onChange={(e) => {
-              onFile(e.target.files?.[0]);
-              e.target.value = ""; // permite volver a elegir el mismo archivo
-            }}
-          />
-        </label>
-        {preview && !subiendo ? (
-          <button
-            type="button"
-            onClick={onQuitar}
-            className="inline-flex min-h-9 items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-caramba-grafito/60 transition-colors hover:bg-caramba-crema hover:text-caramba-grafito"
-          >
-            <X className="size-3.5" strokeWidth={2.5} />
-            Quitar
-          </button>
-        ) : null}
-      </div>
-      {error ? <p className="mt-1.5 text-xs font-medium text-[#a34433]">{error}</p> : null}
-    </div>
+    <BannerStudio
+      open={estudioAbierto}
+      onClose={() => setEstudioAbierto(false)}
+      kicker={`${campaignName || "Campaña"} · beneficio ${name || "Empresa"}`}
+      title={bannerTitle}
+      onTitleChange={setBannerTitle}
+      subtitle={bannerSubtitle}
+      onSubtitleChange={setBannerSubtitle}
+      accentColor={accent}
+      escritorio={{
+        preview: bannerPreview,
+        subiendo: bannerSubiendo,
+        error: bannerError,
+        onFile: handleBannerFile,
+        onQuitar: () => {
+          setBannerImageUrl("");
+          setBannerPreview("");
+          setBannerError(null);
+        },
+      }}
+      celular={{
+        preview: bannerMovilPreview,
+        subiendo: bannerMovilSubiendo,
+        error: bannerMovilError,
+        onFile: handleBannerMovilFile,
+        onQuitar: () => {
+          setBannerMovilUrl("");
+          setBannerMovilPreview("");
+          setBannerMovilError(null);
+        },
+      }}
+      overlay={bannerOverlay}
+      onOverlayChange={setBannerOverlay}
+      posEscritorio={bannerTextPosition}
+      onPosEscritorio={setBannerTextPosition}
+      posCelular={bannerMovilPos}
+      onPosCelular={setBannerMovilPos}
+    />
+    </>
   );
 }

@@ -40,7 +40,8 @@ const upsertSchema = z.object({
     .optional(),
   // Oscurecido de la imagen del banner (0–0.7); viaja como string del form
   bannerOverlay: z.coerce.number().min(0).max(0.7).optional(),
-  // Ancla del texto sobre el banner (grilla 3×3, como los sliders de Shopify)
+  // Ancla del texto sobre el banner (grilla 3×3, como los sliders de Shopify).
+  // La móvil admite "" = "sigue la posición de computador".
   bannerTextPosition: z
     .enum([
       "top-left",
@@ -52,6 +53,22 @@ const upsertSchema = z.object({
       "bottom-left",
       "bottom-center",
       "bottom-right",
+    ])
+    .optional(),
+  bannerTextPositionMobile: z
+    .union([
+      z.literal(""),
+      z.enum([
+        "top-left",
+        "top-center",
+        "top-right",
+        "center-left",
+        "center-center",
+        "center-right",
+        "bottom-left",
+        "bottom-center",
+        "bottom-right",
+      ]),
     ])
     .optional(),
   accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
@@ -140,6 +157,10 @@ export async function upsertCompanyAction(
       accentColor: d.accentColor,
       bannerOverlay: d.bannerOverlay ?? 0.35,
       bannerTextPosition: d.bannerTextPosition ?? "center-left",
+      // Solo se guarda si difiere: ausente = el celular sigue a computador
+      ...(d.bannerTextPositionMobile
+        ? { bannerTextPositionMobile: d.bannerTextPositionMobile }
+        : {}),
     },
     endsAt: d.endsAt ? endOfDayInChile(d.endsAt) : null,
     catalogFilter,

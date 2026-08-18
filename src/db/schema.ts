@@ -168,6 +168,8 @@ export const campaigns = pgTable(
       bannerBg?: string;
       bannerOverlay?: number;
       bannerTextPosition?: string;
+      /** Ancla en celular; ausente = sigue a bannerTextPosition */
+      bannerTextPositionMobile?: string;
     }>(),
     startsAt: timestamp("starts_at", { withTimezone: true }),
     endsAt: timestamp("ends_at", { withTimezone: true }),

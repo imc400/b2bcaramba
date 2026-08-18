@@ -48,6 +48,7 @@ export default async function AccessPage({
         bannerImageMobileUrl={ctx.campaign.bannerImageMobileUrl}
         bannerOverlay={ctx.campaign.theme?.bannerOverlay}
         bannerTextPosition={ctx.campaign.theme?.bannerTextPosition}
+        bannerTextPositionMobile={ctx.campaign.theme?.bannerTextPositionMobile}
       />
 
       {/* Acceso. `relative z-10`: la tarjeta se solapa con el banner (-mt-8) y
