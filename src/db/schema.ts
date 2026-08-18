@@ -156,12 +156,18 @@ export const campaigns = pgTable(
     bannerTitle: text("banner_title").notNull(),
     bannerSubtitle: text("banner_subtitle"),
     bannerImageUrl: text("banner_image_url"),
+    // Imagen específica para celular (recorte 1:1). Si falta, el celular usa
+    // la de escritorio; si solo existe esta, el escritorio la reutiliza.
+    bannerImageMobileUrl: text("banner_image_mobile_url"),
     // Tema visual del microsite (acento, oscurecido del banner) — co-branding
     // editable. bannerOverlay: opacidad 0–0.7 de la capa oscura sobre la foto.
+    // bannerTextPosition: "fila-columna" (top|center|bottom - left|center|right);
+    // ausente = "center-left", el aspecto histórico del banner.
     theme: jsonb("theme").$type<{
       accentColor?: string;
       bannerBg?: string;
       bannerOverlay?: number;
+      bannerTextPosition?: string;
     }>(),
     startsAt: timestamp("starts_at", { withTimezone: true }),
     endsAt: timestamp("ends_at", { withTimezone: true }),

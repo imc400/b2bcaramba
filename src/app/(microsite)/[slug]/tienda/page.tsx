@@ -70,7 +70,9 @@ export default async function TiendaPage({
           title={`${firstName ? `¡Hola ${firstName}! ` : ""}${session.campaign.bannerTitle}`}
           accentColor={accent}
           bannerImageUrl={session.campaign.bannerImageUrl}
+          bannerImageMobileUrl={session.campaign.bannerImageMobileUrl}
           bannerOverlay={session.campaign.theme?.bannerOverlay}
+          bannerTextPosition={session.campaign.theme?.bannerTextPosition}
         />
 
         {/* Búsqueda + filtros */}

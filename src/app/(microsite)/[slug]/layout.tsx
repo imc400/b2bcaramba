@@ -39,12 +39,18 @@ export default async function MicrositeLayout({
         companyLogoUrl={company.logoUrl}
         right={
           remaining !== null ? (
-            <span className="flex items-center gap-3">
+            <span className="flex items-center gap-2 sm:gap-3">
               <Badge tone={remaining > 0 ? "verde" : "neutro"}>
                 <span className="size-1.5 rounded-full bg-current opacity-70" />
-                {remaining > 0
-                  ? `Te queda${remaining === 1 ? "" : "n"} ${remaining} regalo${remaining === 1 ? "" : "s"}`
-                  : "Cupo completo"}
+                {remaining > 0 ? (
+                  <>
+                    {/* En celular se abrevia para no chocar con las marcas */}
+                    <span className="hidden sm:inline">{`Te queda${remaining === 1 ? "" : "n"} `}</span>
+                    {`${remaining} regalo${remaining === 1 ? "" : "s"}`}
+                  </>
+                ) : (
+                  "Cupo completo"
+                )}
               </Badge>
               {/* POST a propósito: un link GET al logout es prefetcheable. */}
               <form action={`/${slug}/salir`} method="POST">

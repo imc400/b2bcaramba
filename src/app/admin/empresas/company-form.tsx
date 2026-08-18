@@ -32,8 +32,12 @@ export type CompanyFormInitial = {
   bannerTitle: string;
   bannerSubtitle: string;
   bannerImageUrl: string;
+  /** Imagen específica para celular (1:1); vacío = se reutiliza la de escritorio */
+  bannerImageMobileUrl: string;
   /** Opacidad 0–0.7 de la capa oscura sobre la imagen del banner */
   bannerOverlay: number;
+  /** Ancla del texto sobre el banner: "top|center|bottom-left|center|right" */
+  bannerTextPosition: string;
   accentColor: string;
   endsAt: string;
   defaultQuota: number;
@@ -80,6 +84,13 @@ export function CompanyForm({ initial, appUrl }: { initial: CompanyFormInitial; 
   const [bannerSubiendo, setBannerSubiendo] = useState(false);
   const [bannerError, setBannerError] = useState<string | null>(null);
   const [bannerOverlay, setBannerOverlay] = useState(initial.bannerOverlay);
+  const [bannerMovilUrl, setBannerMovilUrl] = useState(initial.bannerImageMobileUrl);
+  const [bannerMovilPreview, setBannerMovilPreview] = useState(initial.bannerImageMobileUrl);
+  const [bannerMovilSubiendo, setBannerMovilSubiendo] = useState(false);
+  const [bannerMovilError, setBannerMovilError] = useState<string | null>(null);
+  const [bannerTextPosition, setBannerTextPosition] = useState(
+    initial.bannerTextPosition || "center-left",
+  );
 
   const [preview, setPreview] = useState<{
     total: number;
@@ -230,6 +241,21 @@ export function CompanyForm({ initial, appUrl }: { initial: CompanyFormInitial; 
     }
   }
 
+  async function handleBannerMovilFile(file: File | undefined) {
+    if (!file) return;
+    setBannerMovilError(null);
+    setBannerMovilPreview(URL.createObjectURL(file)); // preview inmediato mientras sube
+    setBannerMovilSubiendo(true);
+    try {
+      setBannerMovilUrl(await subirImagen(file, "banner"));
+    } catch (e) {
+      setBannerMovilError(e instanceof Error ? e.message : "No se pudo subir la imagen.");
+      setBannerMovilPreview(bannerMovilUrl); // volver a la imagen anterior (o a ninguna)
+    } finally {
+      setBannerMovilSubiendo(false);
+    }
+  }
+
   return (
     <form action={submit} className="grid gap-6 lg:grid-cols-[1fr_400px]">
       {initial.companyId ? <input type="hidden" name="companyId" value={initial.companyId} /> : null}
@@ -239,7 +265,9 @@ export function CompanyForm({ initial, appUrl }: { initial: CompanyFormInitial; 
       <input type="hidden" name="accentColor" value={accent} />
       <input type="hidden" name="logoUrl" value={logoUrl} />
       <input type="hidden" name="bannerImageUrl" value={bannerImageUrl} />
+      <input type="hidden" name="bannerImageMobileUrl" value={bannerMovilUrl} />
       <input type="hidden" name="bannerOverlay" value={String(bannerOverlay)} />
+      <input type="hidden" name="bannerTextPosition" value={bannerTextPosition} />
       <input
         type="hidden"
         name="includeProductIds"
@@ -367,60 +395,43 @@ export function CompanyForm({ initial, appUrl }: { initial: CompanyFormInitial; 
           </Field>
           <div>
             <Label>Imagen de fondo del banner</Label>
-            {bannerPreview ? (
-              <div className="mb-3 overflow-hidden rounded-xl border border-caramba-grafito/15">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={bannerPreview}
-                  alt="Imagen de fondo del banner"
-                  className="h-28 w-full object-cover object-center"
-                />
-              </div>
-            ) : null}
-            <div className="flex flex-wrap items-center gap-3">
-              <label className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-full border border-caramba-grafito/15 bg-white px-5 py-2.5 text-sm font-semibold text-caramba-grafito transition-colors hover:border-caramba-grafito/40">
-                {bannerSubiendo ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <ImagePlus className="size-4" strokeWidth={2} />
-                )}
-                {bannerPreview ? "Cambiar imagen" : "Subir imagen de fondo"}
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  className="sr-only"
-                  disabled={bannerSubiendo}
-                  onChange={(e) => {
-                    handleBannerFile(e.target.files?.[0]);
-                    e.target.value = ""; // permite volver a elegir el mismo archivo
-                  }}
-                />
-              </label>
-              {bannerPreview && !bannerSubiendo ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setBannerImageUrl("");
-                    setBannerPreview("");
-                    setBannerError(null);
-                  }}
-                  className="inline-flex min-h-11 items-center gap-1.5 rounded-full px-4 py-2.5 text-sm font-semibold text-caramba-grafito/60 transition-colors hover:bg-caramba-crema hover:text-caramba-grafito"
-                >
-                  <X className="size-4" strokeWidth={2.5} />
-                  Quitar
-                </button>
-              ) : null}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <BannerUploadZone
+                titulo="Computador"
+                medidas="2400 × 800 px (3:1)"
+                aspecto="aspect-[3/1]"
+                preview={bannerPreview}
+                subiendo={bannerSubiendo}
+                error={bannerError}
+                onFile={handleBannerFile}
+                onQuitar={() => {
+                  setBannerImageUrl("");
+                  setBannerPreview("");
+                  setBannerError(null);
+                }}
+              />
+              <BannerUploadZone
+                titulo="Celular"
+                medidas="1080 × 1080 px (cuadrada)"
+                aspecto="aspect-square"
+                preview={bannerMovilPreview}
+                subiendo={bannerMovilSubiendo}
+                error={bannerMovilError}
+                onFile={handleBannerMovilFile}
+                onQuitar={() => {
+                  setBannerMovilUrl("");
+                  setBannerMovilPreview("");
+                  setBannerMovilError(null);
+                }}
+              />
             </div>
-            <p className="mt-1 text-xs text-caramba-grafito/65">
-              Opcional. Recomendado: 2400 × 800 px, JPG o PNG, máx. 4 MB. La foto se recorta para
-              llenar el banner: deja lo importante al centro (en celulares se recortan los lados).
-              Sin imagen, el banner usa el color de acento.
+            <p className="mt-1.5 text-xs text-caramba-grafito/65">
+              Opcional. JPG o PNG, máx. 4 MB cada una. Si solo subes una, se usa en ambas
+              pantallas. Mejor fotos limpias sin texto incrustado: el título va encima y el
+              oscurecido asegura que se lea. Sin imagen, el banner usa el color de acento.
             </p>
-            {bannerError ? (
-              <p className="mt-1 text-xs font-medium text-[#a34433]">{bannerError}</p>
-            ) : null}
           </div>
-          {bannerPreview ? (
+          {bannerPreview || bannerMovilPreview ? (
             <Field
               label="Oscurecido del fondo"
               htmlFor="bannerOverlayRange"
@@ -443,6 +454,48 @@ export function CompanyForm({ initial, appUrl }: { initial: CompanyFormInitial; 
               </div>
             </Field>
           ) : null}
+          <div>
+            <p className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-caramba-grafito/50">
+              Posición del texto
+            </p>
+            <div className="flex items-center gap-4">
+              <div
+                role="radiogroup"
+                aria-label="Posición del texto sobre el banner"
+                className="grid w-fit grid-cols-3 gap-1 rounded-xl border border-caramba-grafito/15 bg-white p-1.5"
+              >
+                {(["top", "center", "bottom"] as const).flatMap((fila) =>
+                  (["left", "center", "right"] as const).map((col) => {
+                    const valor = `${fila}-${col}`;
+                    const activo = bannerTextPosition === valor;
+                    return (
+                      <button
+                        key={valor}
+                        type="button"
+                        role="radio"
+                        aria-checked={activo}
+                        aria-label={`${POSICION_FILA[fila]} ${POSICION_COL[col]}`}
+                        title={`${POSICION_FILA[fila]} ${POSICION_COL[col]}`}
+                        onClick={() => setBannerTextPosition(valor)}
+                        className={`flex size-8 items-center justify-center rounded-lg transition-colors ${
+                          activo ? "bg-caramba-grafito" : "hover:bg-caramba-crema"
+                        }`}
+                      >
+                        <span
+                          className={`size-2 rounded-full ${
+                            activo ? "bg-white" : "bg-caramba-grafito/30"
+                          }`}
+                        />
+                      </button>
+                    );
+                  }),
+                )}
+              </div>
+              <p className="max-w-48 text-xs text-caramba-grafito/65">
+                Dónde se ancla el título sobre el banner, como en los sliders de Shopify.
+              </p>
+            </div>
+          </div>
           <div>
             <p className="mb-1.5 block text-[11px] font-bold uppercase tracking-wider text-caramba-grafito/50">
               Color de acento
@@ -707,17 +760,37 @@ export function CompanyForm({ initial, appUrl }: { initial: CompanyFormInitial; 
       {/* Columna derecha: previews */}
       <div className="space-y-4">
         <p className="text-[11px] font-bold uppercase tracking-wider text-caramba-grafito/50">
-          Vista previa del banner
+          Vista previa del banner · computador
         </p>
-        {/* El MISMO componente que pinta el microsite: la vista previa es fiel */}
+        {/* El MISMO componente que pinta el microsite: la vista previa es fiel.
+            variant fuerza cada variante porque esta columna es angosta. */}
         <CampaignHero
+          variant="desktop"
           kicker={`${campaignName || "Campaña"} · beneficio ${name || "Empresa"}`}
           title={bannerTitle || "Título del banner"}
           subtitle={bannerSubtitle || undefined}
           accentColor={accent}
           bannerImageUrl={bannerPreview || null}
+          bannerImageMobileUrl={bannerMovilPreview || null}
           bannerOverlay={bannerOverlay}
+          bannerTextPosition={bannerTextPosition}
         />
+        <p className="pt-1 text-[11px] font-bold uppercase tracking-wider text-caramba-grafito/50">
+          Vista previa del banner · celular
+        </p>
+        <div className="mx-auto w-full max-w-[340px]">
+          <CampaignHero
+            variant="mobile"
+            kicker={`${campaignName || "Campaña"} · beneficio ${name || "Empresa"}`}
+            title={bannerTitle || "Título del banner"}
+            subtitle={bannerSubtitle || undefined}
+            accentColor={accent}
+            bannerImageUrl={bannerPreview || null}
+            bannerImageMobileUrl={bannerMovilPreview || null}
+            bannerOverlay={bannerOverlay}
+            bannerTextPosition={bannerTextPosition}
+          />
+        </div>
 
         <div className="flex items-center justify-between pt-2">
           <p className="text-[11px] font-bold uppercase tracking-wider text-caramba-grafito/50">
@@ -797,5 +870,76 @@ export function CompanyForm({ initial, appUrl }: { initial: CompanyFormInitial; 
         </div>
       </div>
     </form>
+  );
+}
+
+const POSICION_FILA = { top: "Arriba", center: "Centro", bottom: "Abajo" } as const;
+const POSICION_COL = { left: "izquierda", center: "centro", right: "derecha" } as const;
+
+/** Tarjeta de subida de una de las dos imágenes del banner (computador/celular). */
+function BannerUploadZone({
+  titulo,
+  medidas,
+  aspecto,
+  preview,
+  subiendo,
+  error,
+  onFile,
+  onQuitar,
+}: {
+  titulo: string;
+  medidas: string;
+  /** Proporción de la miniatura de esta zona */
+  aspecto: string;
+  preview: string;
+  subiendo: boolean;
+  error: string | null;
+  onFile: (file: File | undefined) => void;
+  onQuitar: () => void;
+}) {
+  return (
+    <div className="rounded-xl border border-caramba-grafito/15 p-3">
+      <p className="text-xs font-bold text-caramba-grafito">
+        {titulo}
+        <span className="ml-1.5 font-medium text-caramba-grafito/50">{medidas}</span>
+      </p>
+      {preview ? (
+        <div className={`mt-2 overflow-hidden rounded-lg border border-caramba-grafito/10 ${aspecto}`}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={preview} alt={`Imagen del banner (${titulo})`} className="h-full w-full object-cover" />
+        </div>
+      ) : null}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <label className="inline-flex min-h-9 cursor-pointer items-center justify-center gap-1.5 rounded-full border border-caramba-grafito/15 bg-white px-3.5 py-1.5 text-xs font-semibold text-caramba-grafito transition-colors hover:border-caramba-grafito/40">
+          {subiendo ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <ImagePlus className="size-3.5" strokeWidth={2} />
+          )}
+          {preview ? "Cambiar" : "Subir"}
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            className="sr-only"
+            disabled={subiendo}
+            onChange={(e) => {
+              onFile(e.target.files?.[0]);
+              e.target.value = ""; // permite volver a elegir el mismo archivo
+            }}
+          />
+        </label>
+        {preview && !subiendo ? (
+          <button
+            type="button"
+            onClick={onQuitar}
+            className="inline-flex min-h-9 items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold text-caramba-grafito/60 transition-colors hover:bg-caramba-crema hover:text-caramba-grafito"
+          >
+            <X className="size-3.5" strokeWidth={2.5} />
+            Quitar
+          </button>
+        ) : null}
+      </div>
+      {error ? <p className="mt-1.5 text-xs font-medium text-[#a34433]">{error}</p> : null}
+    </div>
   );
 }

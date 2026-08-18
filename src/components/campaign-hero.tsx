@@ -5,22 +5,48 @@ import { accentText, BannerDecoration } from "./brand";
  * y la vista previa del panel: lo que Javiera ve al editar es exactamente lo
  * que verá el colaborador.
  *
- * Dos modos:
- * - Con imagen de fondo: estilo slider de Shopify — foto cover centrada, capa
- *   de oscurecido configurable (theme.bannerOverlay) y texto claro encima.
+ * Dos modos visuales:
+ * - Con imagen de fondo: estilo slider de Shopify — foto cover, capa de
+ *   oscurecido configurable (theme.bannerOverlay), texto claro encima y
+ *   posición del texto en 9 puntos (theme.bannerTextPosition). Hay una imagen
+ *   de escritorio (3:1) y una opcional para celular (1:1); si falta una, la
+ *   otra cubre ambos casos.
  * - Sin imagen: el estilo original, degradado del color de acento con la
  *   decoración de juguetes del Brandbook.
  *
+ * `variant`: el microsite usa "responsive" (la variante la decide el ancho de
+ * la pantalla, corte en sm/640px). El panel fuerza "desktop" y "mobile" para
+ * que cada vista previa muestre SU variante aunque viva en una columna
+ * angosta del formulario.
+ *
  * Sin JS de cliente: se renderiza igual desde Server Components.
  */
+
+export type BannerVariant = "responsive" | "desktop" | "mobile";
+
+const VERTICAL: Record<string, string> = {
+  top: "justify-start",
+  center: "justify-center",
+  bottom: "justify-end",
+};
+
+const HORIZONTAL: Record<string, { text: string; block: string }> = {
+  left: { text: "text-left", block: "" },
+  center: { text: "text-center", block: "mx-auto" },
+  right: { text: "text-right", block: "ml-auto" },
+};
+
 export function CampaignHero({
   kicker,
   title,
   subtitle,
   accentColor,
   bannerImageUrl,
+  bannerImageMobileUrl,
   bannerOverlay = 0.35,
+  bannerTextPosition,
   compact = false,
+  variant = "responsive",
   decorationIcon = "rocking-horse",
   className,
 }: {
@@ -29,64 +55,114 @@ export function CampaignHero({
   title: string;
   subtitle?: string | null;
   accentColor: string;
+  /** Imagen de escritorio (3:1). Si falta, se usa la móvil también aquí. */
   bannerImageUrl?: string | null;
+  /** Imagen para celular (1:1). Si falta, se usa la de escritorio. */
+  bannerImageMobileUrl?: string | null;
   /** Opacidad de la capa oscura sobre la foto, 0–0.7 */
   bannerOverlay?: number;
+  /** Dónde se ancla el texto; ausente = "center-left" (aspecto histórico) */
+  bannerTextPosition?: string | null;
   /** Variante compacta (tienda) vs. portada */
   compact?: boolean;
+  /** "responsive" en el microsite; el panel fuerza "desktop"/"mobile" */
+  variant?: BannerVariant;
   decorationIcon?: string;
   className?: string;
 }) {
-  const conImagen = Boolean(bannerImageUrl);
+  const srcDesktop = bannerImageUrl || bannerImageMobileUrl || null;
+  const srcMobile = bannerImageMobileUrl || bannerImageUrl || null;
+  const conImagen = Boolean(srcDesktop);
   const oscurecido = Math.min(0.7, Math.max(0, bannerOverlay));
   const textColor = conImagen ? "#ffffff" : accentText(accentColor);
 
-  const padding = compact ? "px-8 py-8" : "px-8 py-12 sm:px-12";
-  // Con foto, el banner necesita alto propio (la foto debe respirar);
-  // sin foto conserva exactamente el alto natural del texto, como siempre.
-  const alto = conImagen
-    ? compact
-      ? "flex min-h-[180px] flex-col justify-center sm:min-h-[220px]"
-      : "flex min-h-[260px] flex-col justify-center sm:min-h-[320px]"
-    : "";
+  const [fila = "center", columna = "left"] = (bannerTextPosition ?? "center-left").split("-");
+  const vertical = VERTICAL[fila] ?? VERTICAL.center;
+  const horizontal = HORIZONTAL[columna] ?? HORIZONTAL.left;
+
+  // Clases por variante. Alto: con foto el banner toma la proporción del arte
+  // recomendado (1:1 celular, 3:1 escritorio; la tienda compacta usa franjas
+  // más bajas). Sin foto conserva el alto natural del texto, como siempre.
+  const MOBILE = {
+    padding: compact ? "px-8 py-8" : "px-8 py-12",
+    alto: compact
+      ? "aspect-[4/3] max-h-[340px] min-h-[180px]"
+      : "aspect-square max-h-[480px] min-h-[260px]",
+    h1: compact ? "text-2xl" : "text-3xl leading-tight",
+  };
+  const DESKTOP = {
+    padding: compact ? "px-8 py-8" : "px-12 py-12",
+    alto: compact ? "min-h-[220px]" : "aspect-[3/1] min-h-[320px]",
+    h1: compact ? "text-3xl" : "text-4xl leading-tight",
+  };
+  const RESPONSIVE = {
+    padding: compact ? "px-8 py-8" : "px-8 py-12 sm:px-12",
+    alto: compact
+      ? "aspect-[4/3] max-h-[340px] min-h-[180px] sm:aspect-auto sm:max-h-none sm:min-h-[220px]"
+      : "aspect-square max-h-[480px] min-h-[260px] sm:aspect-[3/1] sm:max-h-none sm:min-h-[320px]",
+    h1: compact ? "text-2xl sm:text-3xl" : "text-3xl leading-tight sm:text-4xl",
+  };
+  const c = variant === "desktop" ? DESKTOP : variant === "mobile" ? MOBILE : RESPONSIVE;
+
+  // Qué imagen(es) pintar: en responsive con dos artes distintas van ambas y
+  // decide el breakpoint; en variantes forzadas (o con un solo arte) va una.
+  const imagenes: { src: string; extra: string }[] = !conImagen
+    ? []
+    : variant === "desktop"
+      ? [{ src: srcDesktop as string, extra: "" }]
+      : variant === "mobile"
+        ? [{ src: srcMobile as string, extra: "" }]
+        : srcDesktop === srcMobile
+          ? [{ src: srcDesktop as string, extra: "" }]
+          : [
+              { src: srcMobile as string, extra: " sm:hidden" },
+              { src: srcDesktop as string, extra: " hidden sm:block" },
+            ];
 
   return (
     <section
-      className={["relative overflow-hidden rounded-3xl", padding, alto, className]
+      className={[
+        "relative flex flex-col overflow-hidden rounded-3xl",
+        c.padding,
+        conImagen ? c.alto : "",
+        vertical,
+        className,
+      ]
         .filter(Boolean)
         .join(" ")}
       style={
         conImagen
-          ? {
-              backgroundImage: `url("${(bannerImageUrl as string).replace(/"/g, "%22")}")`,
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-              color: textColor,
-            }
+          ? { color: textColor }
           : {
               background: `linear-gradient(135deg, ${accentColor} 0%, ${accentColor}cc 100%)`,
               color: textColor,
             }
       }
     >
+      {imagenes.map((img) => (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          key={img.src + img.extra}
+          src={img.src}
+          alt=""
+          aria-hidden
+          className={`absolute inset-0 h-full w-full object-cover${img.extra}`}
+        />
+      ))}
       {conImagen ? (
         <div aria-hidden className="absolute inset-0 bg-black" style={{ opacity: oscurecido }} />
       ) : (
         <BannerDecoration icon={decorationIcon} />
       )}
       <div
-        className="relative"
+        className={`relative w-full ${horizontal.text}`}
         style={conImagen ? { textShadow: "0 1px 14px rgba(0,0,0,0.4)" } : undefined}
       >
         <p className="text-xs font-bold uppercase tracking-[0.2em] opacity-80">{kicker}</p>
-        <h1
-          className={
-            compact ? "mt-2 text-2xl sm:text-3xl" : "mt-3 max-w-xl text-3xl leading-tight sm:text-4xl"
-          }
-        >
-          {title}
-        </h1>
-        {subtitle ? <p className="mt-3 max-w-lg opacity-85">{subtitle}</p> : null}
+        <h1 className={`mt-3 max-w-xl ${c.h1} ${horizontal.block}`}>{title}</h1>
+        {subtitle ? (
+          <p className={`mt-3 max-w-lg opacity-85 ${horizontal.block}`}>{subtitle}</p>
+        ) : null}
       </div>
     </section>
   );

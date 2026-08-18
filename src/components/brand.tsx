@@ -37,21 +37,28 @@ export function CoBrandHeader({
 }) {
   return (
     <header className="sticky top-0 z-20 border-b border-caramba-grafito/8 bg-white/90 backdrop-blur">
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
-        <div className="flex items-center gap-3">
+      {/* min-w-0 + shrink-0 calculados: en celular los logos se achican y el
+          lado izquierdo cede espacio, para que el chip de cupo y "Salir"
+          nunca se monten encima de las marcas. */}
+      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-2 px-4 sm:gap-4 sm:px-6">
+        <div className="flex min-w-0 items-center gap-2 overflow-hidden sm:gap-3">
           {companyLogoUrl ? (
             // Logo subido por Javiera en el panel
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={companyLogoUrl} alt={companyName} className="h-8 w-auto max-w-28 object-contain" />
+            <img
+              src={companyLogoUrl}
+              alt={companyName}
+              className="h-6 w-auto max-w-20 object-contain sm:h-8 sm:max-w-28"
+            />
           ) : (
-            <span className="rounded-lg bg-caramba-grafito px-2.5 py-1 text-sm font-bold lowercase text-white">
+            <span className="min-w-16 max-w-28 shrink-0 truncate rounded-lg bg-caramba-grafito px-2.5 py-1 text-sm font-bold lowercase text-white sm:max-w-none">
               {companyName}
             </span>
           )}
-          <span className="text-caramba-grafito/25">×</span>
-          <CarambaLogo className="h-9 w-auto" />
+          <span className="shrink-0 text-caramba-grafito/25">×</span>
+          <CarambaLogo className="h-7 w-auto shrink-0 sm:h-9" />
         </div>
-        {right}
+        <div className="shrink-0">{right}</div>
       </div>
     </header>
   );

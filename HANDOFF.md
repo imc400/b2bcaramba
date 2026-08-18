@@ -110,9 +110,12 @@ Los filtros del microsite se alimentan así — **la clienta mantiene METACAMPOS
 Bucket público `publico` en el MISMO proyecto Supabase. Subida vía `/api/admin/upload`
 (magic bytes, 4 MB máx — el body de Vercel corta en 4.5 MB; SVG solo para logos).
 Env: `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (en Vercel prod y .env.local; se
-regeneran con `pnpm storage:setup`). El banner de campaña (imagen + oscurecido en
-`theme.bannerOverlay`) se edita con vista previa en vivo (`CampaignHero`, compartido
-entre panel y microsite). Medidas recomendadas: **2400 × 800 px (3:1)**. Archivos
+regeneran con `pnpm storage:setup`). El banner de campaña se edita con vista previa en vivo doble —
+computador y celular — (`CampaignHero`, compartido entre panel y microsite; el panel
+fuerza `variant`). Dos imágenes: escritorio **2400 × 800 (3:1)** y celular **1080 × 1080
+(1:1)** en `campaigns.banner_image_mobile_url` (migración 0007); si falta una, la otra
+cubre ambas pantallas. Oscurecido en `theme.bannerOverlay` y ancla del texto en
+`theme.bannerTextPosition` (grilla 3×3, default center-left). Archivos
 huérfanos (subida sin guardar) son posibles y triviales; no hay GC.
 
 ## Acceso al panel
